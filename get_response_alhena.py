@@ -68,6 +68,27 @@ ref_sed = {'HD152614': 'HD152614.rgs',                                       # B
            'HD84937': 'HD84937.rgs',
            #'BD+17.4708': 'BD+174708.rgs'                                     # F
            }
+
+spec_types = {'HD152614': 'B',                                       # B
+           'HD36267': 'B', 'hd36267': 'B',       # B
+           'HD118098': 'A', 'HD 118098': 'A',  # A
+           'HD14055': 'A', 'hd14055': 'A',       # A
+           'HD87887': 'A',                                         # A
+           'HD46300': 'A', 'hd46300': 'A', 'HD 46300': 'A', # A
+           'HD184006': 'A',                                       # A
+           'HD149212': 'A',                                       # A
+           'HD147449': 'A',                                       # A
+           'GSC4293-0432': 'A',                               # A
+           'HD214994': 'A',                                       # A
+           'HD42818': 'A', 'HD 42818': 'A',  # A
+           'HD56169': 'A',                                         # A
+           'HD185395': 'F',                                       # F
+           'HD206826': 'F',                                       # F
+           'HD220657': 'F',                                       # F
+           'HD84937': 'F',
+           #'BD+17.4708': 'BD+174708.rgs'                                     # F
+           }
+fname = {'A':'A_68Tau_depth0.95_blend20.list','B':'B_HR7512_depth0.98_blend20.list','F':"F_Procyon_depth0.95_blend20.list"}
 #----------------------------------------------------------------
 logging.basicConfig(level=logging.INFO,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("RESPONSE")
@@ -130,6 +151,7 @@ class response:
     Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit')
     Mask_path = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/Balmer.list')
     InputFilesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/ModelSEDs')
+    LinesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/')
 
     #Initialize the variables we want to use outside of the class as arrays
     night = dict()
@@ -246,7 +268,9 @@ class response:
         '''
         global i
         #load Balmer lines list
-        lines = np.loadtxt(self.Mask_path,usecols=(1),skiprows=1,delimiter =',',unpack=True)
+        # lines = np.loadtxt(self.Mask_path,usecols=(1),skiprows=1,delimiter =',',unpack=True)
+        stype = spec_types[self.object]
+        lines = np.loadtxt(f'{LinesDir}/{fname[stype]}',delimiter =',',unpack=True,skiprows=1,usecols=[1])
         #Create CCF
         specinterpol = si.interp1d(self.wave[i],self.flux,fill_value='extrapolate')
         velocity_array_full = np.array([])
