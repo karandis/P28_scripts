@@ -60,5 +60,6 @@ for star in starnames:
     a.plot(ref_wave,ref_flux,'k')
     [a.axvline(x=line,color='k',ls='--') for line in lines]
     a.set_title(f'{star}')
+    a.set_xlim(min(lines)-5,max(lines)+5)
     pl.show()
     exit()

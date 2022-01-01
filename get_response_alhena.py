@@ -269,8 +269,9 @@ class response:
         global i
         #load Balmer lines list
         # lines = np.loadtxt(self.Mask_path,usecols=(1),skiprows=1,delimiter =',',unpack=True)
-        stype = spec_types[self.object]
-        lines = np.loadtxt(f'{LinesDir}/{fname[stype]}',delimiter =',',unpack=True,skiprows=1,usecols=[1])
+        stype = spec_types[self.object[i]]
+        lines = np.loadtxt(f'{self.LinesDir}/{fname[stype]}',delimiter =',',unpack=True,skiprows=1,usecols=[1])
+        self.lines=lines
         #Create CCF
         specinterpol = si.interp1d(self.wave[i],self.flux,fill_value='extrapolate')
         velocity_array_full = np.array([])
@@ -762,6 +763,7 @@ class response:
         # fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
         ax3.plot(self.wave[i],self.flux_corr)
         ax4.plot(self.wave[i],self.model_flux[i])
+        ax4.axvline(x = self.lines,color='cornflowerblue',alpha=0.9,ls='--')
         ax1.plot(self.wave[i],self.rough_response,'b',label='Rough response',alpha=0.5)
         ax1.plot(self.wave[i],self.response[i],'r',label='Median filtered response')
         ax1.plot(self.wave[i],self.spline_fit[i],'k--',label=f'Spline fit')
@@ -778,10 +780,10 @@ class response:
         ax1.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
         ax1.legend(loc='upper right')
         fig.tight_layout()
-        pl.savefig(f'plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
+        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
         pl.show()
         pl.close()
-        logger.info(f'Figure saved to plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
+        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
 
 
 if __name__=='__main__':
