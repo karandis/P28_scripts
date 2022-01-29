@@ -25,7 +25,7 @@ print(Mfit_dir)
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("CORRECT SPECTRUM")
 #----------------------------------------------------------------
-bad_models = ['GSC4293-0432']#,'HD184006','HD147449','HD185395','HD206826','HD84937','HD220657']
+bad_models = ['HD185395','HD206826','HD220657']
 
 order_to_be = {'HD36267': 1,
            'HD152614':2,
@@ -85,24 +85,12 @@ class correct_spectrum:
         self.response=self.load_response()
         # return
 
-        #For _c
-        # idx = (self.wave > 4000)
-        # self.wave = self.wave[idx]
-        # self.flux = self.flux[idx]
-        # self.flux_err = self.flux_err[idx]
-        # self.response = self.response[idx]
         self.rc_flux = self.flux/self.response
         self.rc_flux_no_TAC = self.flux_no_TAC/self.response
 
         self.rc_err = self.flux_err/self.response
         self.rc_err_no_TAC = self.flux_no_TAC_err/self.response
-        # f,(a,b,c) = pl.subplots(nrows=3,sharex=True,gridspec_kw={'height_ratios':[1,1,1]})
-        # a.plot(self.wave,self.flux)
-        # b.plot(self.wave,self.response)
-        # c.plot(self.wave,self.rc_flux)
-        # pl.show()
-        # exit()
-        # self.create_specific_plot(self.wave,self.rc_flux,linewidth=2,xlabel='Wavelengh ($\AA$)',ylabel='Response Corrected Flux',title=f'{self.object}_{self.unseq}')
+
         logger.info(f'STDNAME: {self.stdname}, STDNIGHT: {self.stdnight}, STDUNUSEQ: {self.stdunseq}')
         self.write_fits()
 
@@ -114,45 +102,23 @@ class correct_spectrum:
             self.STD_NIGHT=1
             logger.info(f'{len(resp_paths)} responses available for {self.night}')
 
-            #
-            # order = [x.stem.split('_')[1] in bad_models for x in resp_paths]
+            for p in resp_paths:
 
-            resp_paths_sorted = sorted(resp_paths, key=lambda x: order_to_be[x.stem.split('_')[1]])
-
-            # res = sorted(zipped, key = lambda x: x[1])
-            # order = [x.stem.split('_')[1] in bad_models for x in resp_paths]
-            # resp_paths_sorted = [x for _,x in sorted(zip(order,resp_paths))]
-
-            for p in resp_paths_sorted:
-            # for p in resp_paths:
-                # print(p.stem.split('_')[1])
-                # exit()
                 logger.info(f'Processing response: {p}')
+                self.stdnight=int(p.stem.split('_')[0])
                 self.stdname=p.stem.split('_')[1]
                 self.stdunseq=int(p.stem.split('_')[2])
-                self.stdnight=int(p.stem.split('_')[0])
                 resp,poly = self.load_and_interpolate(p)
                 self.create_plots(resp,poly)
                 return poly
-                # use = input('Do you want to correct with this response? ([y]/n)\n')
-                # if use.lower() == 'n':
-                    # continue
-                # else:
-                    # return poly
+
         else:
             self.STD_NIGHT = 0
             logger.info('get_response.py has to be run!')
-            # t = np.abs(int(input('How many days (int) tolerance should be considered?\n')))
-            # if t == 0:
-            #     t = None
-            resp = gr.response(night=self.night, tolerance=60, overwrite = False)
+            resp = gr.response(night=self.night, tolerance=60, overwrite = True)
             logger.info(f'{len(resp.unseq)} responses available to use')
 
-            # if resp:
-            #     logger.info(f'{len(resp.unseq)} responses available to use')
-            # else:
-            #     logger.critical(f'No responses available within {t} days of {self.night}, sorry!')
-            #     exit()
+
             indices = resp.unseq.keys()
             resp_paths = []
             for j in indices:
@@ -163,12 +129,7 @@ class correct_spectrum:
                 except:
                     continue
 
-            resp_paths_sorted = sorted(resp_paths, key=lambda x: order_to_be[x.stem.split('_')[1]])
-
-            # order = [x.stem.split('_')[1] in bad_models for x in resp_paths]
-            # resp_paths_sorted = [x for _,x in sorted(zip(order,resp_paths))]
-
-            for p in resp_paths_sorted:
+            for p in resp_paths:
             # for j in indices:
                 if p.stem.split('_')[1] in bad_models:
                     continue
@@ -181,11 +142,7 @@ class correct_spectrum:
                     return poly
                 except:
                     continue
-                # use = input('Do you want to correct with this response? ([y]/n)\n')
-                # if use.lower() == 'n':
-                #     continue
-                # else:
-                #     return poly
+
 
     def load_and_interpolate(self,p):
         data = pd.read_csv(p,sep='\t',header=0,encoding='utf-8',engine='python')
@@ -526,7 +483,6 @@ class correct_spectrum:
     def create_plots(self,Resp,Poly):
         '''Function to create a plot of the response'''
         logger.info('Creating a plot of the response')
-        mpl.rc('lines',lw=3)
 
         fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=False, sharey=False, gridspec_kw={'height_ratios':[1,1]},figsize=(8,8))
         ax1.plot(self.wave,Resp,'r',label='Median filtered response')
@@ -541,11 +497,11 @@ class correct_spectrum:
         ax2.set_xlabel('Wavelength ($\AA$)',fontsize=14)
         ax1.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)',fontsize=14)
         ax2.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)',fontsize=14)
-        ax1.set_title(f'Response curve for NIGHT: {self.night}, OBJECT:{self.object}, UNSEQ:{self.unseq}')
+        ax1.set_title(f'Response curve for NIGHT: {self.night}, OBJECT:{self.object}, UNSEQ:{self.unseq}, STDUNSEQ:{self.stdunseq}')
         ax1.legend(loc='upper left')
         fig.tight_layout()
         Path(f'{LocalPath}/{self.object}/plots').mkdir(exist_ok=True)
-        pl.savefig(f'{LocalPath}/{self.object}/plots/response_{self.night}_{self.unseq}.png')
+        fig.savefig(f'{LocalPath}/{self.object}/plots/response_{self.night}_{self.unseq}.png')
         pl.close()
 
     def fit_spline(self,r1):

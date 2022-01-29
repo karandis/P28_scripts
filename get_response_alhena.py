@@ -63,32 +63,13 @@ ref_sed = {'HD152614': 'HD152614.rgs',                                       # B
            'HD214994': 'HD214994.rgs',                                       # A
            'HD42818': 'HD42818.rgs', 'HD 42818': 'HD42818.rgs',  # A
            'HD56169': 'HD56169.rgs',                                         # A
-           'HD185395': 'HD185395.rgs',                                       # F
-           'HD206826': 'HD206826.rgs',                                       # F
-           'HD220657': 'HD220657.rgs',                                       # F
+           # 'HD185395': 'HD185395.rgs',                                       # F
+           # 'HD206826': 'HD206826.rgs',                                       # F
+           # 'HD220657': 'HD220657.rgs',                                       # F
            'HD84937': 'HD84937.rgs',
            #'BD+17.4708': 'BD+174708.rgs'                                     # F
            }
 
-spec_types = {'HD152614': 'B',                                       # B
-           'HD36267': 'B', 'hd36267': 'B',       # B
-           'HD118098': 'A', 'HD 118098': 'A',  # A
-           'HD14055': 'A', 'hd14055': 'A',       # A
-           'HD87887': 'A',                                         # A
-           'HD46300': 'A', 'hd46300': 'A', 'HD 46300': 'A', # A
-           'HD184006': 'A',                                       # A
-           'HD149212': 'A',                                       # A
-           'HD147449': 'A',                                       # A
-           'GSC4293-0432': 'A',                               # A
-           'HD214994': 'A',                                       # A
-           'HD42818': 'A', 'HD 42818': 'A',  # A
-           'HD56169': 'A',                                         # A
-           'HD185395': 'F',                                       # F
-           'HD206826': 'F',                                       # F
-           'HD220657': 'F',                                       # F
-           'HD84937': 'F',
-           #'BD+17.4708': 'BD+174708.rgs'                                     # F
-           }
 
 RVs  = {'HD14055':6.586,
         'HD214994':9.420,
@@ -210,7 +191,6 @@ class response:
             self.object[i] = row['object']
             self.night[i] = row['night']
             self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
-            # self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
             if self.rpath[i].is_file() and not overwrite:
                 logger.info(f'{self.rpath[i]} exists')
                 continue
@@ -248,20 +228,15 @@ class response:
             self.wave[i] = self.correct_vel_shift()
             self.model_flux[i] = self.load_model_SED()
             self.response[i] = self.get_response()
-            # self.wl_norm[i] = self.get_norm_wl_array()
-            # self.spline_fit[i] = self.fit_poly(self.poly_degree)
             self.spline_fit[i] = self.fit_spline()
             self.residuals[i] =  self.response[i] - self.spline_fit[i]
-            # self.rms,self.bic = self.calc_goodness_of_fit(self.poly_degree)
             logger.info(f'Spline fit was successful.')
-            # logger.debug(f'Residuals -  RMS : {self.rms}, BIC : {self.bic}')
             self.create_plots()
             self.save_response()
             logger.info(f'Response successfully saved to {self.rpath[i]}')
         if len(self.list_failed):
             failed = pd.DataFrame(data=self.list_failed)
             failed.to_csv(Path(f'/STER/karansinghd/PhD/ResponseCorrection/Failed/ListFailed_{self.night[i]}.txt'),index=False)
-            # np.savetxt(Path(f'/STER/karansinghd/PhD/ResponseCorrection/Failed/ListFailed_{self.night[i]}.txt'),self.list_failed,fmt="%8d"+"%8d"+"%50s")
             logger.info('Saved list of failed corrections')
 
     def load_FITS_table_data(self):
@@ -355,7 +330,7 @@ class response:
         #create knot array
         #[3781.,3852.,3913.,3952.,4000., 4056.,4112.,4168.,4224.,4280.
         added = np.array([3781,3852,3913,3952])
-        if spec_types[self.object[i]] =='F':
+        if self.object[i] =='HD84937':
             violet = np.linspace(4000,4340,25)
         else:
             violet = np.linspace(4000,4280,20)
