@@ -25,7 +25,7 @@ print(Mfit_dir)
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("CORRECT SPECTRUM")
 #----------------------------------------------------------------
-bad_models = ['GSC4293-0432','HD184006','HD147449','HD185395','HD206826','HD84937','HD220657']
+bad_models = ['GSC4293-0432']#,'HD184006','HD147449','HD185395','HD206826','HD84937','HD220657']
 
 order_to_be = {'HD36267': 1,
            'HD152614':2,
@@ -156,6 +156,8 @@ class correct_spectrum:
             indices = resp.unseq.keys()
             resp_paths = []
             for j in indices:
+                if resp.unseq[j] == 325226: #remove the one troublesome model
+                    continue
                 try:
                     resp_paths.append(Path(resp.rpath[j]))
                 except:
@@ -517,6 +519,7 @@ class correct_spectrum:
         # ax1.set_ylim((minimum,1))
         ax1.set_title(title)
         # pl.savefig(f'/STER/karansinghd/PhD/ResponseCorrection/testing/Plots/{title}.pdf',format='pdf')
+        # pl.show()
         pl.savefig(f'{LocalPath}/{self.object}/{title}.pdf',format='pdf')
         pl.close()
 
@@ -524,22 +527,25 @@ class correct_spectrum:
         '''Function to create a plot of the response'''
         logger.info('Creating a plot of the response')
         mpl.rc('lines',lw=3)
-        fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
+
+        fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=False, sharey=False, gridspec_kw={'height_ratios':[1,1]},figsize=(8,8))
         ax1.plot(self.wave,Resp,'r',label='Median filtered response')
         ax1.plot(self.wave,Poly,'k--',label=f'Spline fit')
-        ax2.plot(self.wave,Resp-Poly,'k')
-        ax2.axhline(y=0,color='r')
+        idxes = (self.wave>=3800) & (self.wave<=5000)
+        ax2.plot(self.wave[idxes],Resp[idxes],'r')
+        ax2.plot(self.wave[idxes],Poly[idxes],'k--')
+        # ax2.axhline(y=0,color='r')
         ax2.xaxis.set_tick_params(labelsize=12)
         ax1.yaxis.set_tick_params(labelsize=12)
         ax2.yaxis.set_tick_params(labelsize=12)
         ax2.set_xlabel('Wavelength ($\AA$)',fontsize=14)
         ax1.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)',fontsize=14)
-        ax2.set_ylabel('Residuals',fontsize=14)
+        ax2.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)',fontsize=14)
         ax1.set_title(f'Response curve for NIGHT: {self.night}, OBJECT:{self.object}, UNSEQ:{self.unseq}')
         ax1.legend(loc='upper left')
         fig.tight_layout()
-        Path('plots').mkdir(exist_ok=True)
-        pl.savefig(f'plots/response_{self.night}_{self.unseq}.png')
+        Path(f'{LocalPath}/{self.object}/plots').mkdir(exist_ok=True)
+        pl.savefig(f'{LocalPath}/{self.object}/plots/response_{self.night}_{self.unseq}.png')
         pl.close()
 
     def fit_spline(self,r1):
@@ -561,10 +567,19 @@ class correct_spectrum:
 
 if __name__=='__main__':
     # correct_spectrum(20100930,307479,'V__AG_Psc')
-    # correct_spectrum(20100927,307233,'NSV___118')
+    # f= correct_spectrum(20100927,307233,'NSV___118')
+    # print(307233,f.stdunseq,f.stdname,20100927,f.stdnight)
     # f=correct_spectrum(20111009,376039,'HIP_113222')
     # f = correct_spectrum(20110223,334866,'HD14055')
-    f = correct_spectrum(20101104,314318,'NSV___691')
+    # f = correct_spectrum(20101104,314318,'NSV___691')
+    # f = correct_spectrum(20111211,389593,'HIP__33079')
+    # f = correct_spectrum(20111213,389846,'HIP__12585')
+    # f = correct_spectrum(20110811,363617,'V__KK_And')
+    # f = correct_spectrum(20131121,507710,'NSV___159')
+    # f = correct_spectrum(20131122,507932,'HIP__18169')
+    # f = correct_spectrum(20110921,374008,'NSV_11839')
+    f = correct_spectrum(20110111,327091,'___32_Tau')
+    # print(307233,f.stdunseq,f.stdname,20100927,f.stdnight)
     exit()
     # df = pd.read_csv('prog28_good_20190702.csv',header=0,sep=',')
     df = pd.read_csv('melchiors_meta.csv',sep='|')

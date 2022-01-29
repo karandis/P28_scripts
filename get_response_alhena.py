@@ -13,6 +13,8 @@ UPDATE: *BD+174708 has been dropped due to poor corrections
         (BIC). Degree 30 has the lowest BIC and hence is the best model.
         *Both responses of the night kept in the form of arrays
         *added comments on all class variables
+        28/01/2022:
+        update: mean RV used to correct for all P2 stars except GSC-
 
 METHOD : Takes in a night as input and check:
 
@@ -36,7 +38,6 @@ import plotting
 plotting.set_mode('paper')
 import scipy.constants as sc
 from astropy.io import fits
-from scipy.optimize import leastsq
 from scipy.signal import medfilt as mf
 from numpy.polynomial import polynomial as poly
 import subprocess as sp
@@ -88,7 +89,24 @@ spec_types = {'HD152614': 'B',                                       # B
            'HD84937': 'F',
            #'BD+17.4708': 'BD+174708.rgs'                                     # F
            }
-fname = {'A':'A_68Tau_depth0.95_blend20.list','B':'B_HR7512_depth0.98_blend20.list','F':"F_Procyon_depth0.95_blend20.list"}
+
+RVs  = {'HD14055':6.586,
+        'HD214994':9.420,
+        'HD185395':-27.369,
+        'HD152614':-16.725,
+        'HD220657':-10.029,
+        'HD46300':12.752,
+        'HD184006':-14.398,
+        'GSC4293-0432':-3.491,
+        'HD56169':-2.591,
+        'HD118098':-10.086,
+        'HD84937':-14.920,
+        'HD149212':-6.338,
+        'HD36267':	21.487,
+        'HD206826':18.227,
+        'HD87887':7.023,
+        'HD42818':-3.899,
+        'HD147449':-45.706}
 #----------------------------------------------------------------
 logging.basicConfig(level=logging.INFO,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("RESPONSE")
@@ -192,6 +210,7 @@ class response:
             self.object[i] = row['object']
             self.night[i] = row['night']
             self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+            # self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
             if self.rpath[i].is_file() and not overwrite:
                 logger.info(f'{self.rpath[i]} exists')
                 continue
@@ -265,58 +284,17 @@ class response:
         a normalized spectrum to do a better CCF)
         We do not use the Gaussian fitting but the bisector analysis, which is
         much more reliable
+
+        Update 28/01/2022: Scrapping the majority of this function. No need to calc RVs, we just read them from a file!
         '''
         global i
-        #load Balmer lines list
-        # lines = np.loadtxt(self.Mask_path,usecols=(1),skiprows=1,delimiter =',',unpack=True)
-        stype = spec_types[self.object[i]]
-        lines = np.loadtxt(f'{self.LinesDir}/{fname[stype]}',delimiter =',',unpack=True,skiprows=1,usecols=[1])
-        self.lines=lines
-        #Create CCF
-        specinterpol = si.interp1d(self.wave[i],self.flux,fill_value='extrapolate')
-        velocity_array_full = np.array([])
-        ccf_full = np.array([])
-        #Look from -150 to +150 Km/s and get the CCF
-        for k in np.arange(-150,150,0.25):
-            linesred = np.add(lines,np.array(1000 * k/sc.c * lines))
-            fluxred = specinterpol(linesred)
-            velocity_array_full = np.append(velocity_array_full,float(k))
-            ccf_full = np.append(ccf_full,fluxred.sum())
-
-        #Get a small section around the minimum
-        mini = ccf_full.argmin()
-        if mini <= 20:
-            limmin = 0
+        if self.object[i] == 'GSC4293-0432':
+            #read RV from file!
+            # rv =
         else:
-            limmin = mini-20
+            rv = RVs[self.object[i]]
 
-        if mini >= len(ccf_full) - 21:
-            limmax = len(ccf_full) - 1
-        else:
-            limmax = mini + 20
-
-        velocity_array = velocity_array_full[limmin:limmax]
-        ccf = ccf_full[limmin:limmax]
-        maxi = ccf_full.argmax()
-
-        #Bisector analysis
-        depth = ccf.max()-ccf.min()
-        scale = depth/10
-        bisector_y = np.linspace(ccf.min()+scale,ccf.max()-6*scale,20)
-
-        minimumccf = ccf.argmin()
-        ccfinterpol_blue = si.interp1d(ccf[0:minimumccf],velocity_array[0:minimumccf],fill_value='extrapolate')
-        ccfinterpol_red = si.interp1d(ccf[minimumccf:],velocity_array[minimumccf:],fill_value='extrapolate')
-
-        leftarray = ccfinterpol_blue(bisector_y)
-        rightarray = ccfinterpol_red(bisector_y)
-
-        velocityarray = (rightarray-leftarray)/2.+leftarray
-
-        rv = velocityarray.mean()
-        err_rv = velocityarray.std()
-        logger.info(f'The topocentric velocity is {rv:.2f} km/s with a standard deviation of {err_rv:.2f} km/s')
-        return rv,err_rv
+        return rv
 
     def correct_vel_shift(self):
         '''Function to correct for the RV shift before getting  the  response'''
@@ -377,7 +355,10 @@ class response:
         #create knot array
         #[3781.,3852.,3913.,3952.,4000., 4056.,4112.,4168.,4224.,4280.
         added = np.array([3781,3852,3913,3952])
-        violet = np.linspace(4000,4280,6)
+        if spec_types[self.object[i]] =='F':
+            violet = np.linspace(4000,4340,25)
+        else:
+            violet = np.linspace(4000,4280,20)
         # violet2 = np.linspace(left,4280,10)
         blue = np.linspace(4350,5515,30)
         green = np.linspace(5545,6635,30)
@@ -762,12 +743,12 @@ class response:
         fig,(ax3,ax4,ax1,ax2)=pl.subplots(nrows=4, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[1,1,1,1]},figsize=(8,8))
         # fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
         ax3.plot(self.wave[i],self.flux_corr)
-        ax4.plot(self.wave[i],self.model_flux[i])
-        ax4.axvline(x = self.lines,color='cornflowerblue',alpha=0.9,ls='--')
+        ax4.plot(self.wave[i],self.model_flux[i],zorder=12)
+        [ax4.axvline(x = line,color='tomato',alpha=0.5,ls='--') for line in self.lines]
         ax1.plot(self.wave[i],self.rough_response,'b',label='Rough response',alpha=0.5)
         ax1.plot(self.wave[i],self.response[i],'r',label='Median filtered response')
         ax1.plot(self.wave[i],self.spline_fit[i],'k--',label=f'Spline fit')
-        ax2.plot(self.wave[i],self.residuals[i],'k')
+        ax2.plot(self.wave[i],100*np.divide(self.residuals[i],self.spline_fit[i]),'k')
         ax2.axhline(y=0,color='r')
 
         [ax1.axvline(x=j,color='grey',alpha=0.8) for j in self.knots]
@@ -775,10 +756,10 @@ class response:
         ax2.set_xlabel('Wavelength ($\AA$)')
         ax1.set_ylabel('ADU')
         # ax1.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)')
-        ax2.set_ylabel('Residuals')
+        ax2.set_ylabel('Residuals (%)')
 
-        ax1.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
-        ax1.legend(loc='upper right')
+        ax3.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
+        # ax1.legend(loc='upper right')
         fig.tight_layout()
         pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
         pl.show()
@@ -796,7 +777,8 @@ if __name__=='__main__':
     #389579    389569  GSC4293-0432  20111211.0  20111211.0
     # x=response(night=20111211,tolerance=None,overwrite=True)
     # x = response(night=20101220,tolerance=None,overwrite=True)
-    x = response(night=20101004,tolerance=None,overwrite=True)
+    x = response(night=20111211,tolerance=None,overwrite=True)
+    # x = response(night=20100927,tolerance=None,overwrite=True)
     # correct_spectrum(20101220,325228,'HD36267')
 
     # HD36267, STDNIGHT: 20101220, STDUNUSEQ: 325226

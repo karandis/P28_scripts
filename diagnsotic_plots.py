@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 import matplotlib
-matplotlib.use('agg')
+# matplotlib.use('agg')
 import matplotlib.pyplot as pl
 import plotting
 import scipy.interpolate as si
@@ -50,7 +50,7 @@ def load_corrected_fits(fitsfile):
 
 P28_path = Path('/STER/karansinghd/PhD/Projects/P28_c/')
 
-df = pd.read_csv('melchiors_meta.csv',header=0,sep='|')
+df = pd.read_csv(f'{P28_path}/melchiors_meta.csv',header=0,sep='|')
 # df = pd.read_csv('melchiors_meta_ckcc.txt',header=0,sep='|')
 # df.columns = [x.strip() for x in df.columns]
 df.obsid = df.obsid.astype('int32')
@@ -66,6 +66,12 @@ for i,row in df.iterrows():
     # if unseq<769700:
     #     continue
     object = row['starname'].strip().replace(' ','_').replace('*','_')
+    # night = 20101104
+    # unseq = 314318
+    # object = 'NSV___691'
+    # night = 20100927
+    # unseq = 307233
+    # object = 'NSV___118'
 
     cr_path = P28_path.joinpath(f'{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
     tac_path = P28_path.joinpath(f'{object}/output/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
@@ -108,6 +114,6 @@ for i,row in df.iterrows():
     clean = sp.run(f'rm -rf {outpath_old}',shell=True)
     fig.savefig(outpath,dpi=300,bbox_inches='tight')
     fig.savefig(outpath2,dpi=300,bbox_inches='tight')
-    pl.close()
-    # pl.show()
-    # exit()
+    # pl.close()
+    pl.show()
+    exit()

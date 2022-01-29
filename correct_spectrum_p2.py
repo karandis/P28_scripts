@@ -80,7 +80,7 @@ class correct_spectrum:
 
     def load_response(self):
         # resp_paths=list(Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night}_{self.object}_{self.unseq}.txt'))
-        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c/').glob(f'{self.night}_*_{self.unseq}.txt'))
+        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/').glob(f'{self.night}_*_{self.unseq}.txt'))
         if len(resp_paths):
             self.STD_NIGHT=1
             logger.info(f'{len(resp_paths)} responses available for {self.night}')
@@ -482,8 +482,8 @@ class correct_spectrum:
         return(spl(x))
 
 if __name__=='__main__':
-    correct_spectrum(20101220,325228,'HD36267')
-    exit()
+    # correct_spectrum(20101220,325228,'HD36267')
+    # exit()
     df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/p2_table.csv')
     # df.stdunseq = df.stdunseq.astype('int32')
     # df.stdnight = df.stdnight.astype('int32')
