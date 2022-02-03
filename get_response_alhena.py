@@ -32,7 +32,7 @@ import numpy as np
 import scipy.interpolate as si
 import pandas as pd
 import matplotlib as mpl
-# mpl.use('agg')
+mpl.use('agg')
 import matplotlib.pyplot as pl
 import plotting
 plotting.set_mode('paper')
@@ -165,7 +165,6 @@ class response:
     spline_fit = dict()
     wl_norm = dict()
     rv = dict()
-    err_rv = dict()
     model_flux=dict()
 
 
@@ -184,60 +183,58 @@ class response:
         if not len(p2_info):
             logger.critical('No Program 2 star for the night!')
             return
-        for j,row in p2_info.iterrows():
-            global i
-            i = j
-            self.unseq[i] = row['unseq']
-            self.object[i] = row['object']
-            self.night[i] = row['night']
-            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
-            if self.rpath[i].is_file() and not overwrite:
-                logger.info(f'{self.rpath[i]} exists')
-                continue
-            print('##########################################################')
-            logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
-            self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
-            self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
-            self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
-            #Run Molecfit if not already done
-            if not self.filename[i].is_file() and self.redo_molec:
-                logger.info('Molecfit will be run as TAC file does not exist')
-                self.prepare_molecfit_files()
-                self.modify_par_file()
-                try:
-                    self.rewrite_fits()
-                    if not self.key:
-                        logger.critical('Keywords for meteo station readings missing in header, next!')
-                        continue
-                except Exception as e:
-                    logger.warning('Failed while rewriting FITS file')
-                    if not (self.flag and self.flag_var):
-                        e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
-                    logger.critical(f'Exception: {e}')
-                    self.list_failed.append([self.night[i],self.unseq[i],e])
-                    continue
-                self.run_molecfit()
+        # for j,row in p2_info.iterrows():
+        global i
+        i = 0
+        row = p2_info.iloc[i]
+        self.unseq[i] = row['unseq']
+        self.object[i] = row['object']
+        self.night[i] = row['night']
+        self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+        if self.rpath[i].is_file() and not overwrite:
+            logger.info(f'{self.rpath[i]} exists')
+            return
+        print('##########################################################')
+        logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
+        self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
+        self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
+        self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
+        #Run Molecfit if not already done
+        if not self.filename[i].is_file() and self.redo_molec:
+            logger.info('Molecfit will be run as TAC file does not exist')
+            self.prepare_molecfit_files()
+            self.modify_par_file()
             try:
-                self.wave[i], self.flux, self.flux_corr = self.load_FITS_table_data()
-                logger.info('Successfully loaded Molecfit corrected spectrum')
+                self.rewrite_fits()
+                if not self.key:
+                    logger.critical('Keywords for meteo station readings missing in header, next!')
+                    return
             except Exception as e:
-                logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
+                logger.warning('Failed while rewriting FITS file')
+                if not (self.flag and self.flag_var):
+                    e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
+                logger.critical(f'Exception: {e}')
                 self.list_failed.append([self.night[i],self.unseq[i],e])
-                continue
-            self.rv[i],self.err_rv[i] = self.calc_rad_vel()
-            self.wave[i] = self.correct_vel_shift()
-            self.model_flux[i] = self.load_model_SED()
-            self.response[i] = self.get_response()
-            self.spline_fit[i] = self.fit_spline()
-            self.residuals[i] =  self.response[i] - self.spline_fit[i]
-            logger.info(f'Spline fit was successful.')
-            self.create_plots()
-            self.save_response()
-            logger.info(f'Response successfully saved to {self.rpath[i]}')
-        if len(self.list_failed):
-            failed = pd.DataFrame(data=self.list_failed)
-            failed.to_csv(Path(f'/STER/karansinghd/PhD/ResponseCorrection/Failed/ListFailed_{self.night[i]}.txt'),index=False)
-            logger.info('Saved list of failed corrections')
+                return
+            self.run_molecfit()
+        try:
+            self.wave[i], self.flux, self.flux_corr = self.load_FITS_table_data()
+            logger.info('Successfully loaded Molecfit corrected spectrum')
+        except Exception as e:
+            logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
+            self.list_failed.append([self.night[i],self.unseq[i],e])
+            return
+        self.rv[i] = self.calc_rad_vel()
+        self.wave[i] = self.correct_vel_shift()
+        self.model_flux[i] = self.load_model_SED()
+        self.response[i] = self.get_response()
+        self.spline_fit[i] = self.fit_spline()
+        self.residuals[i] =  self.response[i] - self.spline_fit[i]
+        logger.info(f'Spline fit was successful.')
+        self.create_plots()
+        self.save_response()
+        logger.info(f'Response successfully saved to {self.rpath[i]}')
+
 
     def load_FITS_table_data(self):
         '''
@@ -265,7 +262,9 @@ class response:
         global i
         if self.object[i] == 'GSC4293-0432':
             #read RV from file!
-            # rv =
+            rvdat =  pd.read_csv('/STER/karansinghd/PhD/ResponseCorrection/RadialVelocitiesGSC4293-0432.vrdata',delim_whitespace=True,header=None)
+            rvdat.columns=['JD','vrad','sigma','unseq']
+            rv = rvdat.loc[rvdat.unseq==self.unseq[i]].vrad.to_numpy()[0]
         else:
             rv = RVs[self.object[i]]
 
@@ -328,43 +327,20 @@ class response:
         right = max(x)-10
 
         #create knot array
-        #[3781.,3852.,3913.,3952.,4000., 4056.,4112.,4168.,4224.,4280.
         added = np.array([3781,3852,3913,3952])
         if self.object[i] =='HD84937':
             violet = np.linspace(4000,4340,25)
         else:
             violet = np.linspace(4000,4280,20)
-        # violet2 = np.linspace(left,4280,10)
+
         blue = np.linspace(4350,5515,30)
         green = np.linspace(5545,6635,30)
         red = np.linspace(6675,right,20)
 
         knots = np.concatenate((added,violet,blue,green,red))
         self.knots=knots
-        # knots2 = np.concatenate((violet2,blue,green,red))
-        # print(knots)
+
         spl = us(x,y,t=knots)
-        # spl2 = us(x,y,t=knots2)
-        # f,(a,b,c) = pl.subplots(nrows=3,sharex=True,gridspec_kw={'height_ratios':[1,1,1]})
-        # b.plot(x,y,'k')
-        # [c.axvline(x=j,color='grey',alpha=0.8) for j in knots]
-        # b.plot(x,spl(x),'b',label='fixed knots')
-        # # b.plot(x,spl2(x),'r',ls='--',label='array knots')
-        # b.legend()
-        # # print(self.flux_corr)
-        # # a.plot(self.wave[i],self.flux_corr)
-        # c.plot(self.wave[i],self.flux_corr/spl(x),'k',lw=1.5,label='fixed knots')
-        # # c.plot(self.wave[i],self.flux_corr/spl2(x),'r',ls='--',alpha=0.8,label='array knots',lw=0.8)
-        # c.legend()
-        # a.plot(self.wave[i],self.model_flux[i])
-        # [b.axvline(x=j,color='grey',alpha=0.8) for j in knots]
-        # [a.axvline(x=j,color='grey',alpha=0.8) for j in knots]
-        # f.tight_layout()
-        # c.set_ylabel('RC flux')
-        # a.set_ylabel('Model')
-        # b.set_ylabel('Response')
-        # pl.show()
-        # exit()
         return(spl(x))
 
     def calc_goodness_of_fit(self,d):
@@ -686,12 +662,6 @@ class response:
                 df_good_models['time_delta'] = (df_good_models['night']-self.Night).abs()
                 df_good_models.sort_values(by='time_delta',ascending=True,inplace=True)
                 df_good_models.filename = df_good_models.filename.astype(str)
-                # print('HRF' in df_good_models.filename[0])
-                # print(df_good_models[['time_delta','night']])
-                # df_good_models.drop(labels='time_delta',inplace=True)
-                # print(df_good_models.columns)
-                # exit()
-                # df_good_models = df_good_models.iloc[[(df_good_models['night']-self.Night).abs().argmin()]]
             else:
                 logger.critical(f'No good models available within +/- {self.tolerance} days of {self.Night}. Try again!')
         return df_good_models
@@ -707,19 +677,11 @@ class response:
 
     def create_plots(self):
         '''Function to create a plot of the response'''
-        #Comment out next 3 lines if running the automatic loop!
-        # save = input('Create and save plot ([y]/n)?\n')
-        # if save.lower()=='n':
-        #     return
         logger.info('Creating a plot of the fit')
-        # mpl.rc('lines',lw=3)
 
-        # self.flux_corr/self.model_flux[i]
         fig,(ax3,ax4,ax1,ax2)=pl.subplots(nrows=4, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[1,1,1,1]},figsize=(8,8))
-        # fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
         ax3.plot(self.wave[i],self.flux_corr)
         ax4.plot(self.wave[i],self.model_flux[i],zorder=12)
-        [ax4.axvline(x = line,color='tomato',alpha=0.5,ls='--') for line in self.lines]
         ax1.plot(self.wave[i],self.rough_response,'b',label='Rough response',alpha=0.5)
         ax1.plot(self.wave[i],self.response[i],'r',label='Median filtered response')
         ax1.plot(self.wave[i],self.spline_fit[i],'k--',label=f'Spline fit')
@@ -730,16 +692,14 @@ class response:
 
         ax2.set_xlabel('Wavelength ($\AA$)')
         ax1.set_ylabel('ADU')
-        # ax1.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)')
         ax2.set_ylabel('Residuals (%)')
 
         ax3.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
-        # ax1.legend(loc='upper right')
         fig.tight_layout()
-        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
-        pl.show()
+        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
+        # pl.show()
         pl.close()
-        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
+        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
 
 
 if __name__=='__main__':
@@ -752,34 +712,36 @@ if __name__=='__main__':
     #389579    389569  GSC4293-0432  20111211.0  20111211.0
     # x=response(night=20111211,tolerance=None,overwrite=True)
     # x = response(night=20101220,tolerance=None,overwrite=True)
-    x = response(night=20111211,tolerance=None,overwrite=True)
+    # x = response(night=20111117,tolerance=60,overwrite=True)
     # x = response(night=20100927,tolerance=None,overwrite=True)
     # correct_spectrum(20101220,325228,'HD36267')
 
     # HD36267, STDNIGHT: 20101220, STDUNUSEQ: 325226
 
-    exit()
-    # x=response(night=20190504,tolerance=None,overwrite=False)
-    # x=response(20120917,tolerance=15,overwrite=True)
+    # exit()
+    '''
     df = pd.read_csv('melchiors_meta.csv',sep='|')
     df = df.drop_duplicates(subset=['night'])
+    '''
+    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
+    df.columns = ['unseq','stdunseq','stdname','night','stdnight']
+    df = df.drop_duplicates(subset='night')
+    df.reset_index(drop=True,inplace=True)
     for _,row in df.iterrows():
-        x = response(night=row['night'],tolerance=30,overwrite=True)
-    # df.pop('Unnamed: 0')
-    # df.pop('Unnamed: 31')
-    # df.drop()
+        print(f"--------------- ({_+1}/{len(df)}) ----------------")
+        x = response(night=int(row['night']),tolerance=60,overwrite=False)
     print(df.head())
     exit()
-    with Path('./response.log').open('w') as logfile:
-        startdate=dt.date(year=2010,month=1,day=1)
-        delta = dt.timedelta(days=1)
-        enddate = dt.date(year=2011,month=12,day=31)
-        print(startdate,enddate)
-        while startdate <= enddate:
-            try:
-                x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=True)
-                startdate += delta
-            except Exception as e:
-                logfile.write(f'{startdate.strftime(format="%Y%m%d")},{logger.critical(traceback.format_exc())}\n Error: {e}\n')
-                print(e)
-                startdate += delta
+    # with Path('./response.log').open('w') as logfile:
+    #     startdate=dt.date(year=2010,month=1,day=1)
+    #     delta = dt.timedelta(days=1)
+    #     enddate = dt.date(year=2011,month=12,day=31)
+    #     print(startdate,enddate)
+    #     while startdate <= enddate:
+    #         try:
+    #             x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=True)
+    #             startdate += delta
+    #         except Exception as e:
+    #             logfile.write(f'{startdate.strftime(format="%Y%m%d")},{logger.critical(traceback.format_exc())}\n Error: {e}\n')
+    #             print(e)
+    #             startdate += delta

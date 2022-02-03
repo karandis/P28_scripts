@@ -20,30 +20,11 @@ import shutil
 HermesPath = Path('/STER/mercator/hermes/')
 LocalPath = Path('/STER/karansinghd/PhD/Projects/P28_c/')
 Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit/')
-print(Mfit_dir)
 #----------------------------------------------------------------
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("CORRECT SPECTRUM")
 #----------------------------------------------------------------
 bad_models = ['HD185395','HD206826','HD220657']
-
-order_to_be = {'HD36267': 1,
-           'HD152614':2,
-           'HD149212': 3,
-           'HD14055':4,
-           'HD87887':5,
-           'HD42818': 6,
-           'HD214994': 7,
-           'HD46300': 8,
-           'HD118098': 9,
-           'GSC4293-0432': 10,
-           'HD56169': 11,
-           'HD184006': 12,
-           'HD147449': 13,
-           'HD185395': 14,
-           'HD206826': 15,
-           'HD84937': 16,
-           'HD220657': 17}
 
 df_stdinfo = pd.DataFrame({'unseq':[],'stdunseq':[],'stdname':[],'night':[],'stdnight':[]})
 ##########################################################################
@@ -97,7 +78,7 @@ class correct_spectrum:
 
 
     def load_response(self):
-        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c/').glob(f'{self.night}_*.txt'))
+        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/').glob(f'{self.night}_*.txt'))
         if len(resp_paths):
             self.STD_NIGHT=1
             logger.info(f'{len(resp_paths)} responses available for {self.night}')
@@ -115,7 +96,7 @@ class correct_spectrum:
         else:
             self.STD_NIGHT = 0
             logger.info('get_response.py has to be run!')
-            resp = gr.response(night=self.night, tolerance=60, overwrite = True)
+            resp = gr.response(night=self.night, tolerance=60, overwrite = False)
             logger.info(f'{len(resp.unseq)} responses available to use')
 
 
@@ -145,6 +126,7 @@ class correct_spectrum:
 
 
     def load_and_interpolate(self,p):
+        obj = p.stem.split('_')[1]
         data = pd.read_csv(p,sep='\t',header=0,encoding='utf-8',engine='python')
 
         idx1=(self.wave>=min(data['wavelength'])) & (self.wave<=max(data['wavelength']))
@@ -159,7 +141,7 @@ class correct_spectrum:
         try:
             p1 = si.interp1d(data['wavelength'],data['spline'],kind='linear')(self.wave)
         except:
-            p1 = self.fit_spline(r1)
+            p1 = self.fit_spline(r1,obj)
         return r1,p1
 
     def get_atm_ext_cor(self, ext_wl, aext_coeff, head, wl):
@@ -504,14 +486,18 @@ class correct_spectrum:
         fig.savefig(f'{LocalPath}/{self.object}/plots/response_{self.night}_{self.unseq}.png')
         pl.close()
 
-    def fit_spline(self,r1):
+    def fit_spline(self,r1,obj):
         x=self.wave
         y=r1
 
         left = max(4000,min(self.wave))
         right = min(9000,max(self.wave))
         #create knot array
-        violet = np.linspace(left,4580,10)
+        added = np.array([3781,3852,3913,3952])
+        if obj =='HD84937':
+            violet = np.linspace(4000,4340,25)
+        else:
+            violet = np.linspace(4000,4280,20)
         blue = np.linspace(4600,5525,25)
         green = np.linspace(5530,6635,30)
         red = np.linspace(6650,right,20)
@@ -534,62 +520,32 @@ if __name__=='__main__':
     # f = correct_spectrum(20131121,507710,'NSV___159')
     # f = correct_spectrum(20131122,507932,'HIP__18169')
     # f = correct_spectrum(20110921,374008,'NSV_11839')
-    f = correct_spectrum(20110111,327091,'___32_Tau')
+    # f = correct_spectrum(20110111,327091,'___32_Tau')
     # print(307233,f.stdunseq,f.stdname,20100927,f.stdnight)
-    exit()
-    # df = pd.read_csv('prog28_good_20190702.csv',header=0,sep=',')
-    df = pd.read_csv('melchiors_meta.csv',sep='|')
-    # df = pd.read_csv('OverviewProgram28.csv',header=0,sep='|')
-    # df.columns = [x.strip() for x in df.columns]
-    # print('NEW',df.columns)
+    # exit()
     '''
     snippet for specific numbers
     # '''
-    # # nums_to_check =[]
-    # for p in Path('/STER/pierre/hermes/p28/funkyblue/').glob('*.png'):
-    #     unseq = int(p.stem.split('_')[0])
-    #     nums_to_check.append(unseq)
-        # print(unseq)
-        # exit()
-    # nums_to_check = [453599,453600,453601,453602,453603]
-    # nums_to_check = [453585,453591,453593,453595,453596,453597]
+    # df = pd.read_csv('prog28_good_20190702.csv',header=0,sep=',')
+    #2021 April
+    df_melchiors = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/melchiors_meta.csv',sep='|')
+    #2022 Jan
+    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
+    df.columns = ['unseq','stdunseq','stdname','night','stdnight']
+    for i,row in df.iterrows():
+        print(f"-------------------- ({i+1}/{len(df)}) ---------------------")
+        night = int(row['night'])
+        unseq = int(row['unseq'])
+        object = df_melchiors.loc[df_melchiors.obsid.astype(int) == unseq]['starname'].to_numpy()[0].strip()
+        object = object.replace(' ','_').replace('*','_')
+        print(night,unseq,object)
+        exit()
 
-    # ser = pd.read_csv('/STER/karansinghd/List_to_check.csv')
-    # print(np.array(ser))
-    # nums_to_check =np.array(ser)
-    # exit()
-    with Path('./log.log').open('w') as logfile:
-        for i,row in df.iterrows():
-            night = row['night']
-            # night = int(row['filename'].split("/")[4])
-            # object = " ".join(row['  starname  '].strip()).replace('*','_')
-            object = row['starname'].strip().replace(' ','_').replace('*','_')
-            unseq = int(row['obsid'])
-            # if unseq not in nums_to_check:
-            # if unseq not in [412343]:
-                # continue
-            # if (night < 20120101):
-            #     logfile.write(f'{unseq},{night} - no meteo\n')
-            #     # print(,)
-                # continue
-            # if night > 20150100:
-                # exit()
-            '''
-            snippet to copy spectra
-            '''
-            # print(object,unseq,night)
-            # shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_c_cr/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
-            # print('File copied')
-            # continue
-            try:
-                print('-'*73)
-                f=correct_spectrum(night,unseq,object)
-                df_stdinfo.loc[i]=[unseq,f.stdunseq,f.stdname,night,f.stdnight]
-                shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_c_cr/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
-                print('-'*73)
-                # exit()
-            except Exception as e:
-                logfile.write(f'{logger.critical(traceback.format_exc())}\n Error: {e}\n')
-                print(f'Error: {e}')
-                # exit()
+        print('-'*73)
+        f=correct_spectrum(night,unseq,object)
+        df_stdinfo.loc[i]=[unseq,f.stdunseq,f.stdname,night,f.stdnight]
+        shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_c_cr/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
+        print('-'*73)
+
+    df_stdinfo.columns = ['unseq','stdunseq','stdname','night','stdnight']
     df_stdinfo.to_csv('stdinfo.csv',index=False)
