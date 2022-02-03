@@ -200,7 +200,7 @@ class response:
         self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
         self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
         #Run Molecfit if not already done
-        if not self.filename[i].is_file() and self.redo_molec:
+        if (not self.filename[i].is_file()) or (self.filename[i].is_file() and self.redo_molec):
             logger.info('Molecfit will be run as TAC file does not exist')
             self.prepare_molecfit_files()
             self.modify_par_file()
@@ -713,12 +713,12 @@ if __name__=='__main__':
     # x=response(night=20111211,tolerance=None,overwrite=True)
     # x = response(night=20101220,tolerance=None,overwrite=True)
     # x = response(night=20111117,tolerance=60,overwrite=True)
-    # x = response(night=20100927,tolerance=None,overwrite=True)
+    x = response(night=20120609,tolerance=None,overwrite=True)
     # correct_spectrum(20101220,325228,'HD36267')
 
     # HD36267, STDNIGHT: 20101220, STDUNUSEQ: 325226
 
-    # exit()
+    exit()
     '''
     df = pd.read_csv('melchiors_meta.csv',sep='|')
     df = df.drop_duplicates(subset=['night'])

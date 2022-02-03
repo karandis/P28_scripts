@@ -46,7 +46,6 @@ class correct_spectrum:
         self.filename_var = f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits'
         self.mfit_object_path = LocalPath.joinpath(self.object)
         self.par_path=self.mfit_object_path/Path(f'{self.object}_{self.unseq}.par')
-        # self.filename=Path(f'{self.mfit_object_path}/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf_TAC.fits')
         self.filename=Path(f'{self.mfit_object_path}/output/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
         # self.header = fits.getheader(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
         if not self.filename.is_file():
@@ -533,19 +532,22 @@ if __name__=='__main__':
     df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
     df.columns = ['unseq','stdunseq','stdname','night','stdnight']
     for i,row in df.iterrows():
+        if i<=1352:
+            continue
         print(f"-------------------- ({i+1}/{len(df)}) ---------------------")
         night = int(row['night'])
         unseq = int(row['unseq'])
         object = df_melchiors.loc[df_melchiors.obsid.astype(int) == unseq]['starname'].to_numpy()[0].strip()
-        object = object.replace(' ','_').replace('*','_')
-        print(night,unseq,object)
-        exit()
-
+        object = object.strip().replace(' ','_').replace('*','_')
         print('-'*73)
         f=correct_spectrum(night,unseq,object)
         df_stdinfo.loc[i]=[unseq,f.stdunseq,f.stdname,night,f.stdnight]
-        shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_c_cr/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
+        shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_cr_2022/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
         print('-'*73)
 
     df_stdinfo.columns = ['unseq','stdunseq','stdname','night','stdnight']
-    df_stdinfo.to_csv('stdinfo.csv',index=False)
+    df_stdinfo.unseq.astype(int)
+    df_stdinfo.stdunseq.astype(int)
+    df_stdinfo.night.astype(int)
+    df_stdinfo.stdnight.astype(int)
+    df_stdinfo.to_csv('/STER/karansinghd/P28_cr_2022/stdinfo.csv',index=False)
