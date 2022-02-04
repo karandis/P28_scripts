@@ -183,57 +183,58 @@ class response:
         if not len(p2_info):
             logger.critical('No Program 2 star for the night!')
             return
-        # for j,row in p2_info.iterrows():
-        global i
-        i = 0
-        row = p2_info.iloc[i]
-        self.unseq[i] = row['unseq']
-        self.object[i] = row['object']
-        self.night[i] = row['night']
-        self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
-        if self.rpath[i].is_file() and not overwrite:
-            logger.info(f'{self.rpath[i]} exists')
-            return
-        print('##########################################################')
-        logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
-        self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
-        self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
-        self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
-        #Run Molecfit if not already done
-        if (not self.filename[i].is_file()) or (self.filename[i].is_file() and self.redo_molec):
-            logger.info('Molecfit will be run as TAC file does not exist')
-            self.prepare_molecfit_files()
-            self.modify_par_file()
-            try:
-                self.rewrite_fits()
-                if not self.key:
-                    logger.critical('Keywords for meteo station readings missing in header, next!')
-                    return
-            except Exception as e:
-                logger.warning('Failed while rewriting FITS file')
-                if not (self.flag and self.flag_var):
-                    e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
-                logger.critical(f'Exception: {e}')
-                self.list_failed.append([self.night[i],self.unseq[i],e])
+        for j,row in p2_info.iterrows():
+            global i
+            i = j
+            row = p2_info.iloc[i]
+            self.unseq[i] = row['unseq']
+            self.object[i] = row['object']
+            self.night[i] = row['night']
+            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+            if self.rpath[i].is_file() and not overwrite:
+                logger.info(f'{self.rpath[i]} exists')
                 return
-            self.run_molecfit()
-        try:
-            self.wave[i], self.flux, self.flux_corr = self.load_FITS_table_data()
-            logger.info('Successfully loaded Molecfit corrected spectrum')
-        except Exception as e:
-            logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
-            self.list_failed.append([self.night[i],self.unseq[i],e])
+            print('##########################################################')
+            logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
+            self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
+            self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
+            self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
+            #Run Molecfit if not already done
+            if (not self.filename[i].is_file()) or (self.filename[i].is_file() and self.redo_molec):
+                logger.info('Molecfit will be run as TAC file does not exist')
+                self.prepare_molecfit_files()
+                self.modify_par_file()
+                try:
+                    self.rewrite_fits()
+                    if not self.key:
+                        logger.critical('Keywords for meteo station readings missing in header, next!')
+                        continue
+                except Exception as e:
+                    logger.warning('Failed while rewriting FITS file')
+                    if not (self.flag and self.flag_var):
+                        e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
+                    logger.critical(f'Exception: {e}')
+                    self.list_failed.append([self.night[i],self.unseq[i],e])
+                    continue
+                self.run_molecfit()
+            try:
+                self.wave[i], self.flux, self.flux_corr = self.load_FITS_table_data()
+                logger.info('Successfully loaded Molecfit corrected spectrum')
+            except Exception as e:
+                logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
+                self.list_failed.append([self.night[i],self.unseq[i],e])
+                continue
+            self.rv[i] = self.calc_rad_vel()
+            self.wave[i] = self.correct_vel_shift()
+            self.model_flux[i] = self.load_model_SED()
+            self.response[i] = self.get_response()
+            self.spline_fit[i] = self.fit_spline()
+            self.residuals[i] =  self.response[i] - self.spline_fit[i]
+            logger.info(f'Spline fit was successful.')
+            self.create_plots()
+            self.save_response()
+            logger.info(f'Response successfully saved to {self.rpath[i]}')
             return
-        self.rv[i] = self.calc_rad_vel()
-        self.wave[i] = self.correct_vel_shift()
-        self.model_flux[i] = self.load_model_SED()
-        self.response[i] = self.get_response()
-        self.spline_fit[i] = self.fit_spline()
-        self.residuals[i] =  self.response[i] - self.spline_fit[i]
-        logger.info(f'Spline fit was successful.')
-        self.create_plots()
-        self.save_response()
-        logger.info(f'Response successfully saved to {self.rpath[i]}')
 
 
     def load_FITS_table_data(self):

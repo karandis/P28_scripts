@@ -532,8 +532,8 @@ if __name__=='__main__':
     df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
     df.columns = ['unseq','stdunseq','stdname','night','stdnight']
     for i,row in df.iterrows():
-        if i<=1352:
-            continue
+        # if i<=1352:
+        #     continue
         print(f"-------------------- ({i+1}/{len(df)}) ---------------------")
         night = int(row['night'])
         unseq = int(row['unseq'])
