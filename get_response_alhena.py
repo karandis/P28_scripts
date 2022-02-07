@@ -63,9 +63,9 @@ ref_sed = {'HD152614': 'HD152614.rgs',                                       # B
            'HD214994': 'HD214994.rgs',                                       # A
            'HD42818': 'HD42818.rgs', 'HD 42818': 'HD42818.rgs',  # A
            'HD56169': 'HD56169.rgs',                                         # A
-           # 'HD185395': 'HD185395.rgs',                                       # F
-           # 'HD206826': 'HD206826.rgs',                                       # F
-           # 'HD220657': 'HD220657.rgs',                                       # F
+           'HD185395': 'HD185395.rgs',                                       # F
+           'HD206826': 'HD206826.rgs',                                       # F
+           'HD220657': 'HD220657.rgs',                                       # F
            'HD84937': 'HD84937.rgs',
            #'BD+17.4708': 'BD+174708.rgs'                                     # F
            }
@@ -190,7 +190,7 @@ class response:
             self.unseq[i] = row['unseq']
             self.object[i] = row['object']
             self.night[i] = row['night']
-            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_Ftype/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
             if self.rpath[i].is_file() and not overwrite:
                 logger.info(f'{self.rpath[i]} exists')
                 return
@@ -714,24 +714,24 @@ if __name__=='__main__':
     # x=response(night=20111211,tolerance=None,overwrite=True)
     # x = response(night=20101220,tolerance=None,overwrite=True)
     # x = response(night=20111117,tolerance=60,overwrite=True)
-    x = response(night=20120609,tolerance=None,overwrite=True)
+    # x = response(night=20120609,tolerance=None,overwrite=True)
     # correct_spectrum(20101220,325228,'HD36267')
 
     # HD36267, STDNIGHT: 20101220, STDUNUSEQ: 325226
 
-    exit()
+    # exit()
     '''
     df = pd.read_csv('melchiors_meta.csv',sep='|')
     df = df.drop_duplicates(subset=['night'])
     '''
-    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
-    df.columns = ['unseq','stdunseq','stdname','night','stdnight']
-    df = df.drop_duplicates(subset='night')
-    df.reset_index(drop=True,inplace=True)
-    for _,row in df.iterrows():
-        print(f"--------------- ({_+1}/{len(df)}) ----------------")
-        x = response(night=int(row['night']),tolerance=60,overwrite=False)
-    print(df.head())
+    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_scripts/modified.csv')
+    nights = df.night.unique()
+    _ = 1
+    for n in nights:
+        print(f"--------------- ({_}/{len(nights)}) ----------------")
+        x = response(night=int(n),tolerance=60,overwrite=True)
+        _+=1
+    # print(df.head())
     exit()
     # with Path('./response.log').open('w') as logfile:
     #     startdate=dt.date(year=2010,month=1,day=1)

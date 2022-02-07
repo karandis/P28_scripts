@@ -77,7 +77,7 @@ class correct_spectrum:
 
 
     def load_response(self):
-        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/').glob(f'{self.night}_*.txt'))
+        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_Ftype/').glob(f'{self.night}_*.txt'))
         if len(resp_paths):
             self.STD_NIGHT=1
             logger.info(f'{len(resp_paths)} responses available for {self.night}')
@@ -529,8 +529,7 @@ if __name__=='__main__':
     #2021 April
     df_melchiors = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/melchiors_meta.csv',sep='|')
     #2022 Jan
-    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
-    df.columns = ['unseq','stdunseq','stdname','night','stdnight']
+    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_scripts/modified.csv')
     for i,row in df.iterrows():
         # if i<=1352:
         #     continue
@@ -542,7 +541,7 @@ if __name__=='__main__':
         print('-'*73)
         f=correct_spectrum(night,unseq,object)
         df_stdinfo.loc[i]=[unseq,f.stdunseq,f.stdname,night,f.stdnight]
-        shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_cr_2022/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
+        shutil.copy(f'/STER/karansinghd/PhD/Projects/P28_c/{object}/corrected/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits',f'/STER/karansinghd/P28_cr_Ftype/00{unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
         print('-'*73)
 
     df_stdinfo.columns = ['unseq','stdunseq','stdname','night','stdnight']
@@ -550,4 +549,4 @@ if __name__=='__main__':
     df_stdinfo.stdunseq.astype(int)
     df_stdinfo.night.astype(int)
     df_stdinfo.stdnight.astype(int)
-    df_stdinfo.to_csv('/STER/karansinghd/P28_cr_2022/stdinfo.csv',index=False)
+    df_stdinfo.to_csv('/STER/karansinghd/P28_cr_Ftype/stdinfo.csv',index=False)
