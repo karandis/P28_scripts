@@ -13,6 +13,8 @@ UPDATE: *BD+174708 has been dropped due to poor corrections
         (BIC). Degree 30 has the lowest BIC and hence is the best model.
         *Both responses of the night kept in the form of arrays
         *added comments on all class variables
+        28/01/2022:
+        update: mean RV used to correct for all P2 stars except GSC-
 
 METHOD : Takes in a night as input and check:
 
@@ -24,18 +26,18 @@ METHOD : Takes in a night as input and check:
 
 '''
 #------------------------------- IMPORTS  --------------------------------------
-import traceback
-import sys
 import datetime as dt
 from pathlib import Path
 import numpy as np
 import scipy.interpolate as si
 import pandas as pd
 import matplotlib as mpl
+mpl.use('agg')
 import matplotlib.pyplot as pl
+import plotting
+plotting.set_mode('paper')
 import scipy.constants as sc
 from astropy.io import fits
-from scipy.optimize import leastsq
 from scipy.signal import medfilt as mf
 from numpy.polynomial import polynomial as poly
 import subprocess as sp
@@ -43,6 +45,8 @@ import os
 import logging
 from astropy.time import Time
 import RegscorePy as rp #Module to get the Bayesian Information Criterion
+from scipy.interpolate import LSQUnivariateSpline as us
+import traceback
 #---------------------------- REFERENCE SEDs -----------------------------------
 #The reference SEDs are corrected for reddening (interstellar extinction)
 #scripts to redden the SEDs can be found in /STER/karansinghd/PhD/ResponseCorrection/V1/InputFiles/
@@ -59,10 +63,31 @@ ref_sed = {'HD152614': 'HD152614.rgs',                                       # B
            'HD214994': 'HD214994.rgs',                                       # A
            'HD42818': 'HD42818.rgs', 'HD 42818': 'HD42818.rgs',  # A
            'HD56169': 'HD56169.rgs',                                         # A
-           'HD185395': 'HD185395.rgs',                                       # F
-           'HD206826': 'HD206826.rgs',                                       # F
-           'HD220657': 'HD220657.rgs',                                       # F
-           'HD84937': 'HD84937.rgs'}
+           # 'HD185395': 'HD185395.rgs',                                       # F
+           # 'HD206826': 'HD206826.rgs',                                       # F
+           # 'HD220657': 'HD220657.rgs',                                       # F
+           'HD84937': 'HD84937.rgs',
+           #'BD+17.4708': 'BD+174708.rgs'                                     # F
+           }
+
+
+RVs  = {'HD14055':6.586,
+        'HD214994':9.420,
+        'HD185395':-27.369,
+        'HD152614':-16.725,
+        'HD220657':-10.029,
+        'HD46300':12.752,
+        'HD184006':-14.398,
+        'GSC4293-0432':-3.491,
+        'HD56169':-2.591,
+        'HD118098':-10.086,
+        'HD84937':-14.920,
+        'HD149212':-6.338,
+        'HD36267':	21.487,
+        'HD206826':18.227,
+        'HD87887':7.023,
+        'HD42818':-3.899,
+        'HD147449':-45.706}
 #----------------------------------------------------------------
 logging.basicConfig(level=logging.INFO,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("RESPONSE")
@@ -108,7 +133,7 @@ class response:
 
         #Polynomial fitting stuff
         wl_norm: normalized wavelength array for polynomial fit
-        polynomial_fit: the polynomial fit to the response
+        spline_fit: the spline fit to the response (NEW updated)
         poly_degree: degree of the polynomial
         residuals: residuals of the fit
         rms: RMS value of the residuals
@@ -125,6 +150,7 @@ class response:
     Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit')
     Mask_path = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/Balmer.list')
     InputFilesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/ModelSEDs')
+    LinesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/')
 
     #Initialize the variables we want to use outside of the class as arrays
     night = dict()
@@ -136,16 +162,16 @@ class response:
     wave = dict()
     response = dict()
     residuals = dict()
-    polynomial_fit = dict()
+    spline_fit = dict()
     wl_norm = dict()
     rv = dict()
-    err_rv = dict()
     model_flux=dict()
 
 
     poly_degree = 30
 
     def __init__(self,night,tolerance=None,overwrite=False):
+        self.redo_molec=False
         self.tolerance = tolerance
         self.Night = night
         self.list_failed = []
@@ -153,26 +179,28 @@ class response:
         logger.info(f'Processing NIGHT: {self.Night}')
         print('--------------------------------------------------')
         p2_info= self.get_p2_info()
+        p2_info.reset_index(inplace=True,drop=True)
         if not len(p2_info):
             logger.critical('No Program 2 star for the night!')
             return
         for j,row in p2_info.iterrows():
             global i
             i = j
+            row = p2_info.iloc[i]
             self.unseq[i] = row['unseq']
             self.object[i] = row['object']
             self.night[i] = row['night']
-            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
             if self.rpath[i].is_file() and not overwrite:
                 logger.info(f'{self.rpath[i]} exists')
-                continue
+                return
             print('##########################################################')
             logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
             self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
             self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
             self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
             #Run Molecfit if not already done
-            if not self.filename[i].is_file():
+            if (not self.filename[i].is_file()) or (self.filename[i].is_file() and self.redo_molec):
                 logger.info('Molecfit will be run as TAC file does not exist')
                 self.prepare_molecfit_files()
                 self.modify_par_file()
@@ -184,7 +212,7 @@ class response:
                 except Exception as e:
                     logger.warning('Failed while rewriting FITS file')
                     if not (self.flag and self.flag_var):
-                        e = f'One of the input files is missing - flux: {self.flag} or variance: {self.flag_var}'
+                        e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
                     logger.critical(f'Exception: {e}')
                     self.list_failed.append([self.night[i],self.unseq[i],e])
                     continue
@@ -196,21 +224,18 @@ class response:
                 logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
                 self.list_failed.append([self.night[i],self.unseq[i],e])
                 continue
-            self.rv[i],self.err_rv[i] = self.calc_rad_vel()
+            self.rv[i] = self.calc_rad_vel()
             self.wave[i] = self.correct_vel_shift()
             self.model_flux[i] = self.load_model_SED()
             self.response[i] = self.get_response()
-            self.wl_norm[i] = self.get_norm_wl_array()
-            self.polynomial_fit[i] = self.fit_poly(self.poly_degree)
-            self.residuals[i] =  self.response[i] - self.polynomial_fit[i]
-            self.rms,self.bic = self.calc_goodness_of_fit(self.poly_degree)
-            logger.info(f'Polynomial fit was successful. Residuals -  RMS : {self.rms}, BIC : {self.bic}')
+            self.spline_fit[i] = self.fit_spline()
+            self.residuals[i] =  self.response[i] - self.spline_fit[i]
+            logger.info(f'Spline fit was successful.')
             self.create_plots()
             self.save_response()
             logger.info(f'Response successfully saved to {self.rpath[i]}')
-        if len(self.list_failed):
-            np.savetxt(Path(f'/STER/karansinghd/PhD/Projects/ResponseCorrection/Failed/ListFailed_{self.night[i]}.txt'),self.list_failed,fmt="%8d"+"%8d"+"%50s")
-            logger.info('Saved list of failed corrections')
+            return
+
 
     def load_FITS_table_data(self):
         '''
@@ -232,55 +257,19 @@ class response:
         a normalized spectrum to do a better CCF)
         We do not use the Gaussian fitting but the bisector analysis, which is
         much more reliable
+
+        Update 28/01/2022: Scrapping the majority of this function. No need to calc RVs, we just read them from a file!
         '''
         global i
-        #load Balmer lines list
-        lines = np.loadtxt(self.Mask_path,usecols=(1),skiprows=1,delimiter =',',unpack=True)
-        #Create CCF
-        specinterpol = si.interp1d(self.wave[i],self.flux,fill_value='extrapolate')
-        velocity_array_full = np.array([])
-        ccf_full = np.array([])
-        #Look from -150 to +150 Km/s and get the CCF
-        for k in np.arange(-150,150,0.25):
-            linesred = np.add(lines,np.array(1000 * k/sc.c * lines))
-            fluxred = specinterpol(linesred)
-            velocity_array_full = np.append(velocity_array_full,float(k))
-            ccf_full = np.append(ccf_full,fluxred.sum())
-
-        #Get a small section around the minimum
-        mini = ccf_full.argmin()
-        if mini <= 20:
-            limmin = 0
+        if self.object[i] == 'GSC4293-0432':
+            #read RV from file!
+            rvdat =  pd.read_csv('/STER/karansinghd/PhD/ResponseCorrection/RadialVelocitiesGSC4293-0432.vrdata',delim_whitespace=True,header=None)
+            rvdat.columns=['JD','vrad','sigma','unseq']
+            rv = rvdat.loc[rvdat.unseq==self.unseq[i]].vrad.to_numpy()[0]
         else:
-            limmin = mini-20
+            rv = RVs[self.object[i]]
 
-        if mini >= len(ccf_full) - 21:
-            limmax = len(ccf_full) - 1
-        else:
-            limmax = mini + 20
-
-        velocity_array = velocity_array_full[limmin:limmax]
-        ccf = ccf_full[limmin:limmax]
-        maxi = ccf_full.argmax()
-
-        #Bisector analysis
-        depth = ccf.max()-ccf.min()
-        scale = depth/10
-        bisector_y = np.linspace(ccf.min()+scale,ccf.max()-6*scale,20)
-
-        minimumccf = ccf.argmin()
-        ccfinterpol_blue = si.interp1d(ccf[0:minimumccf],velocity_array[0:minimumccf],fill_value='extrapolate')
-        ccfinterpol_red = si.interp1d(ccf[minimumccf:],velocity_array[minimumccf:],fill_value='extrapolate')
-
-        leftarray = ccfinterpol_blue(bisector_y)
-        rightarray = ccfinterpol_red(bisector_y)
-
-        velocityarray = (rightarray-leftarray)/2.+leftarray
-
-        rv = velocityarray.mean()
-        err_rv = velocityarray.std()
-        logger.info(f'The topocentric velocity is {rv:.2f} km/s with a standard deviation of {err_rv:.2f} km/s')
-        return rv,err_rv
+        return rv
 
     def correct_vel_shift(self):
         '''Function to correct for the RV shift before getting  the  response'''
@@ -299,10 +288,10 @@ class response:
 
     def get_response(self):
         '''Function to get the response and apply a median filter '''
-        rough_response = self.flux_corr/self.model_flux[i]
+        self.rough_response = self.flux_corr/self.model_flux[i]
         #2 median filters to deal with the edges
-        R1_1 = mf(rough_response,501)
-        R1_2 = mf(rough_response,11)
+        R1_1 = mf(self.rough_response,1001)
+        R1_2 = mf(self.rough_response,11)
         R1_1[:200] = R1_2[:200]
         R1_1[-40:] = R1_2[-40:]
         return R1_1
@@ -317,7 +306,8 @@ class response:
         return (((self.wave[i]-minimum)/factor)+1).astype(float)
 
     def fit_poly(self,d):
-        '''Function to fit a polynomial to the median filtered response'''
+        '''Function to fit a polynomial to the median filtered response
+        update (20201020): changed to spline fitting :) '''
         x=self.wl_norm[i]
         y=self.response[i]
         # d=self.poly_degree
@@ -330,6 +320,30 @@ class response:
         logger.info(f'Fit the response with a polynomial of degree {self.poly_degree}')
         return polynomial
 
+    def fit_spline(self):
+        x=self.wave[i]
+        y=self.response[i]
+
+        left = min(x)+10
+        right = max(x)-10
+
+        #create knot array
+        added = np.array([3781,3852,3913,3952])
+        if self.object[i] =='HD84937':
+            violet = np.linspace(4000,4340,25)
+        else:
+            violet = np.linspace(4000,4280,20)
+
+        blue = np.linspace(4350,5515,30)
+        green = np.linspace(5545,6635,30)
+        red = np.linspace(6675,right,20)
+
+        knots = np.concatenate((added,violet,blue,green,red))
+        self.knots=knots
+
+        spl = us(x,y,t=knots)
+        return(spl(x))
+
     def calc_goodness_of_fit(self,d):
         '''Function to calc RMS and BIC value of the fit.
         '''
@@ -339,14 +353,14 @@ class response:
         N=len(y)
 
         rms = np.sqrt(np.sum(y**2)/N)
-        BIC=rp.bic.bic(self.response[i],self.polynomial_fit[i],N)
+        BIC=rp.bic.bic(self.response[i],self.spline_fit[i],N)
 
         return rms,BIC
 
 
     def save_response(self):
         '''Function to save the response as a text file'''
-        savefile=pd.DataFrame({'wavelength':self.wave[i],'polynomial':self.polynomial_fit[i],'response':self.response[i]})
+        savefile=pd.DataFrame({'wavelength':self.wave[i],'spline':self.spline_fit[i],'response':self.response[i]})
         savefile.to_csv(self.rpath[i],header=True,index=False,sep='\t')
 
     def prepare_molecfit_files(self):
@@ -639,13 +653,16 @@ class response:
             _s = ''
             date_plus = int(_s.join((date+tol).isoformat().split('-')))
             date_minus = int(_s.join((date-tol).isoformat().split('-')))
-            df_tolerance = df.loc[(df['prog_id']==2) & ((df['night']==date_plus) | (df['night']==date_minus))]
+            df_tolerance = df.loc[(df['prog_id']==2) & ((df['night']<=date_plus) & (df['night']>=date_minus))]
             indices_good_models=self.check_obs_nights(df_tolerance['object'])
             df_good_models=df_tolerance.loc[indices_good_models]
         #If successful, we return the data frame with the info
             if len(df_good_models)>0:
-                logger.info(f'{len(df_good_models)} observations available for {self.Night}')
-                # return df_good_models['unseq'].values,df_good_models['object'].values
+                df_good_models.reset_index(drop=True,inplace=True)
+                logger.info(f'{len(df_good_models)} observations available for {self.Night}, returning the closest')
+                df_good_models['time_delta'] = (df_good_models['night']-self.Night).abs()
+                df_good_models.sort_values(by='time_delta',ascending=True,inplace=True)
+                df_good_models.filename = df_good_models.filename.astype(str)
             else:
                 logger.critical(f'No good models available within +/- {self.tolerance} days of {self.Night}. Try again!')
         return df_good_models
@@ -661,44 +678,71 @@ class response:
 
     def create_plots(self):
         '''Function to create a plot of the response'''
-        #Comment out next 3 lines if running the automatic loop!
-        # save = input('Create and save plot ([y]/n)?\n')
-        # if save.lower()=='n':
-        #     return
         logger.info('Creating a plot of the fit')
-        mpl.rc('lines',lw=3)
-        fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
+
+        fig,(ax3,ax4,ax1,ax2)=pl.subplots(nrows=4, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[1,1,1,1]},figsize=(8,8))
+        ax3.plot(self.wave[i],self.flux_corr)
+        ax4.plot(self.wave[i],self.model_flux[i],zorder=12)
+        ax1.plot(self.wave[i],self.rough_response,'b',label='Rough response',alpha=0.5)
         ax1.plot(self.wave[i],self.response[i],'r',label='Median filtered response')
-        ax1.plot(self.wave[i],self.polynomial_fit[i],'k--',label=f'Polynomial fit (k={self.poly_degree})')
-        ax2.plot(self.wave[i],self.residuals[i],'k')
+        ax1.plot(self.wave[i],self.spline_fit[i],'k--',label=f'Spline fit')
+        ax2.plot(self.wave[i],100*np.divide(self.residuals[i],self.spline_fit[i]),'k')
         ax2.axhline(y=0,color='r')
-        ax2.xaxis.set_tick_params(labelsize=12)
-        ax1.yaxis.set_tick_params(labelsize=12)
-        ax2.yaxis.set_tick_params(labelsize=12)
-        ax2.set_xlabel('Wavelength ($\AA$)',fontsize=14)
-        ax1.set_ylabel('ADU/(erg cm$^{-2}$ s$^{-1}$ $\AA^{-1}$)',fontsize=14)
-        ax2.set_ylabel('Residuals',fontsize=14)
-        ax1.set_title(f'Response curve for NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
-        ax1.legend(loc='upper left')
+
+        [ax1.axvline(x=j,color='grey',alpha=0.8) for j in self.knots]
+
+        ax2.set_xlabel('Wavelength ($\AA$)')
+        ax1.set_ylabel('ADU')
+        ax2.set_ylabel('Residuals (%)')
+
+        ax3.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
         fig.tight_layout()
-        pl.savefig(f'plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
+        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
         # pl.show()
         pl.close()
-        logger.info(f'Figure saved to plots/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
+        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
 
 
 if __name__=='__main__':
-    # x=response(night=20180607,tolerance=1,overwrite=True)
-    # x=response(night=20190504,tolerance=None,overwrite=False)
-    with Path('./response.log').open('w') as logfile:
-        startdate=dt.date(year=2018,month=1,day=1)
-        delta = dt.timedelta(days=1)
-        enddate = dt.date(year=2020,month=12,day=31)
-        while startdate <= enddate:
-            try:
-                x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=False)
-                startdate += delta
-            except Exception as e:
-                logfile.write(f'{startdate.strftime(format="%Y%m%d")},{logger.critical(traceback.format_exc())}\n Error: {e}\n')
-                print(e)
-                startdate += delta
+    # 20100927_HD220657_307231
+    #20110111_HD84937_327107
+    #363584  HD152614  20110811.0  20110811.0
+    #314382    307944  HD184006  20101105.0  20101005.0
+    #374008    373993  HD185395  20110921.0  20110921.0
+    #307630    307624  HD206826  20101002.0  20101002.0
+    #389579    389569  GSC4293-0432  20111211.0  20111211.0
+    # x=response(night=20111211,tolerance=None,overwrite=True)
+    # x = response(night=20101220,tolerance=None,overwrite=True)
+    # x = response(night=20111117,tolerance=60,overwrite=True)
+    x = response(night=20120609,tolerance=None,overwrite=True)
+    # correct_spectrum(20101220,325228,'HD36267')
+
+    # HD36267, STDNIGHT: 20101220, STDUNUSEQ: 325226
+
+    exit()
+    '''
+    df = pd.read_csv('melchiors_meta.csv',sep='|')
+    df = df.drop_duplicates(subset=['night'])
+    '''
+    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/stdinfo.csv')
+    df.columns = ['unseq','stdunseq','stdname','night','stdnight']
+    df = df.drop_duplicates(subset='night')
+    df.reset_index(drop=True,inplace=True)
+    for _,row in df.iterrows():
+        print(f"--------------- ({_+1}/{len(df)}) ----------------")
+        x = response(night=int(row['night']),tolerance=60,overwrite=False)
+    print(df.head())
+    exit()
+    # with Path('./response.log').open('w') as logfile:
+    #     startdate=dt.date(year=2010,month=1,day=1)
+    #     delta = dt.timedelta(days=1)
+    #     enddate = dt.date(year=2011,month=12,day=31)
+    #     print(startdate,enddate)
+    #     while startdate <= enddate:
+    #         try:
+    #             x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=True)
+    #             startdate += delta
+    #         except Exception as e:
+    #             logfile.write(f'{startdate.strftime(format="%Y%m%d")},{logger.critical(traceback.format_exc())}\n Error: {e}\n')
+    #             print(e)
+    #             startdate += delta

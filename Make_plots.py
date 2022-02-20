@@ -1,3 +1,9 @@
+'''
+Script to make plots for the paper
+
+Creates the Response correction for the P2 star and the derivation of the response itself
+'''
+
 import numpy as np
 import pandas as pd
 import plotting
@@ -59,12 +65,13 @@ df = pd.read_csv(l,sep='\t')
 left = min(df.wavelength)+10
 right = max(df.wavelength) -10
 #create knot array
-violet = np.linspace(left,4580,10)
-blue = np.linspace(4600,5525,25)
-green = np.linspace(5530,6635,30)
-red = np.linspace(6650,right,20)
+added = np.array([3781,3852,3913,3952])
+violet = np.linspace(4000,4340,25)
+blue = np.linspace(4350,5515,30)
+green = np.linspace(5545,6635,30)
+red = np.linspace(6675,right,20)
 
-knots = np.concatenate((violet,blue,green,red))
+knots = np.concatenate((added,violet,blue,green,red))
 
 
 fig, (ax1,ax2,ax3) = pl.subplots(nrows=3,ncols=1,gridspec_kw={'height_ratios':[1,1,1]},figsize=(8,9),sharex=True)

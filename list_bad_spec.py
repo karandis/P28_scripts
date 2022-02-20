@@ -1,3 +1,6 @@
+'''
+Script to create FunkyBlueData.csv and try and find correlations
+'''
 from pathlib import Path
 import pandas as pd
 from astropy.io import fits
