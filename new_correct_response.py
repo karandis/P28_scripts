@@ -1,26 +1,28 @@
-#---------------------------------------------------------------------------
-#Modified to input files from Pierre's ccf
-#---------------------------------------------------------------------------
-import get_response_alhena as gr
+'''
+https://docs.scipy.org/doc/scipy/reference/generated/scipy.interpolate.LSQUnivariateSpline.html#scipy.interpolate.LSQUnivariateSpline
+'''
+
+
+import numpy as np
 import pandas as pd
+from pathlib import Path
+import plotting
+import matplotlib.pyplot as pl
 from astropy.io import fits
+from scipy.interpolate import LSQUnivariateSpline as us
+plotting.set_mode('paper')
+import get_response_alhena as gr
 from scipy import interpolate as si
 from pathlib import Path
-import numpy as np
-import matplotlib.pyplot as pl
 import matplotlib as mpl
-import os
 import subprocess as sp
 import logging
 import traceback
-from scipy.interpolate import LSQUnivariateSpline as us
-from astropy.time import Time
-import shutil
+import os
 #---------------------------------------------------------------------------
 HermesPath = Path('/STER/mercator/hermes/')
-LocalPath = Path('/STER/karansinghd/PhD/Projects/P28_p2/')
+LocalPath = Path('/STER/karansinghd/PhD/Projects/P28_c/')
 Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit/')
-print(Mfit_dir)
 #----------------------------------------------------------------
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("CORRECT SPECTRUM")
@@ -28,26 +30,28 @@ logger = logging.getLogger("CORRECT SPECTRUM")
 ##########################################################################
 class correct_spectrum:
     def __init__(self,night,unseq,object):
-        #initial parameters
-        self.redo_molec = False
+        #overwrite previous spectrum?
         overwrite = True
+        #initialize other attributes
         self.night = night
         self.unseq = unseq
         self.object = object
 
         logger.info(f'Processing night: {self.night}, UNSEQ: {self.unseq}, object: {self.object}')
-        #Create directories
-        # LocalPath.joinpath(f'{self.object}/corrected').mkdir(exist_ok=True,parents=True)
-        self.outpath = LocalPath.joinpath(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
-        #Check for overwrite
+
+        #initialize Paths and filenames
+        LocalPath.joinpath(f'{self.object}/corrected').mkdir(exist_ok=True,parents=True)
+        self.outpath = LocalPath.joinpath(f'{self.object}/corrected/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cr.fits')
         if self.outpath.is_file() and not overwrite:
             logger.info(f'Spectrum already corrected! {self.outpath}')
             return
         self.filename_var = f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits'
-        self.mfit_object_path = Path(f'/STER/karansinghd/PhD/ResponseCorrection/Molecfit/{self.object}')
+        self.mfit_object_path = LocalPath.joinpath(self.object)
         self.par_path=self.mfit_object_path/Path(f'{self.object}_{self.unseq}.par')
         self.filename=Path(f'{self.mfit_object_path}/output/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
-        if not self.filename.is_file() and self.redo_molec:
+        #Main routine
+        # Part 1: molecfit. This is the most time consuming part of the routine
+        if not self.filename.is_file():
             logger.info('Molecfit will be run as TAC file does not exist')
             self.prepare_molecfit_files()
             self.modify_par_file()
@@ -58,54 +62,58 @@ class correct_spectrum:
                 logger.critical(f'Exception:{e}')
                 logger.critical(traceback.format_exc())
             self.run_molecfit()
-        self.wave, self.flux, self.flux_err, self.flux_no_TAC, self.flux_no_TAC_err,self.header = self.load_FITS_table_data()
+        #Load Molecfit corrected data
+        self.wave, self.flux, self.flux_err = self.load_FITS_table_data()
 
         logger.info('Successfully loaded Molecfit corrected spectrum')
         self.response=self.load_response()
 
         #For _c
-        # idx = (self.wave > 4000)
-        # self.wave = self.wave[idx]
-        # self.flux = self.flux[idx]
-        # self.flux_err = self.flux_err[idx]
-        # self.response = self.response[idx]
-        self.rc_flux = self.flux/self.response
-        self.rc_flux_no_TAC = self.flux_no_TAC/self.response
+        idx = (self.wave > 4000)
+        self.wave = self.wave[idx]
+        self.flux = self.flux[idx]
+        self.flux_err = self.flux_err[idx]
+        self.response = self.response[idx]
 
+        self.rc_flux = self.flux/self.response
         self.rc_err = self.flux_err/self.response
-        self.rc_err_no_TAC = self.flux_no_TAC_err/self.response
-        # self.create_specific_plot(self.wave,self.rc_flux,linewidth=2,xlabel='Wavelengh ($\AA$)',ylabel='Response Corrected Flux',title=f'{self.object}_{self.unseq}')
+
         self.write_fits()
 
 
     def load_response(self):
-        # resp_paths=list(Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night}_{self.object}_{self.unseq}.txt'))
-        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/').glob(f'{self.night}_*_{self.unseq}.txt'))
+        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses/').glob(f'{self.night}_*.txt'))
         if len(resp_paths):
-            self.STD_NIGHT=1
             logger.info(f'{len(resp_paths)} responses available for {self.night}')
             for p in resp_paths:
                 logger.info(f'Processing response: {p}')
                 resp,poly = self.load_and_interpolate(p)
                 self.create_plots(resp,poly)
                 return poly
+                # use = input('Do you want to correct with this response? ([y]/n)\n')
+                # if use.lower() == 'n':
+                    # continue
+                # else:
+                    # return poly
         else:
-            self.STD_NIGHT = 0
-            logger.info('get_response.py has to be run!')
-            resp = gr.response(night=self.night, tolerance=None, overwrite = False)
+            logger.info('get_response.py has to be run! First looking for adjacent nights')
+
+            resp = gr.response(night=self.night, tolerance=2, overwrite = True)
             if resp:
                 logger.info(f'{len(resp.unseq)} responses available to use')
             else:
                 logger.critical(f'No responses available within {t} days of {self.night}, sorry!')
-                exit()
+                resp = gr.response(night=self.night, tolerance=10, overwrite = True)
             indices = resp.unseq.keys()
             for j in indices:
-                try:
-                    resp,poly = self.load_and_interpolate(Path(resp.rpath[j]))
-                    self.create_plots(resp,poly)
-                    return poly
-                except:
-                    continue
+                resp,poly = self.load_and_interpolate(Path(resp.rpath[j]))
+                self.create_plots(resp,poly)
+                return poly
+                # use = input('Do you want to correct with this response? ([y]/n)\n')
+                # if use.lower() == 'n':
+                #     continue
+                # else:
+                #     return poly
 
     def load_and_interpolate(self,p):
         data = pd.read_csv(p,sep='\t',header=0,encoding='utf-8',engine='python')
@@ -114,15 +122,10 @@ class correct_spectrum:
 
         self.wave = self.wave[idx1]
         self.flux = self.flux[idx1]
-        self.flux_no_TAC = self.flux_no_TAC[idx1]
         self.flux_err = self.flux_err[idx1]
-        self.flux_no_TAC_err = self.flux_no_TAC_err[idx1]
 
         r1 = si.interp1d(data['wavelength'],data['response'],kind='linear')(self.wave)
-        try:
-            p1 = si.interp1d(data['wavelength'],data['spline'],kind='linear')(self.wave)
-        except:
-            p1 = self.fit_spline(r1)
+        p1 = si.interp1d(data['wavelength'],data['spline'],kind='linear')(self.wave)
         return r1,p1
 
     def get_atm_ext_cor(self, ext_wl, aext_coeff, head, wl):
@@ -171,14 +174,11 @@ class correct_spectrum:
         Function to load table data from the FITS file output by Molecfit.
         '''
         hdul = fits.open(self.filename)
-        header = hdul[0].header
         table_data = hdul[1].data
         wave = table_data.field(0)
         flux_err = table_data.field(6)
         flux_TAC = table_data.field(5)
-        flux_no_TAC = table_data.field(2)
-        flux_no_TAC_err = table_data.field(3)
-        return wave, flux_TAC, flux_err, flux_no_TAC, flux_no_TAC_err,header
+        return wave, flux_TAC, flux_err
 
     def load_HERMES_data(self):
         ''' Function to load a HERMES spectrum.
@@ -306,8 +306,8 @@ class correct_spectrum:
         logger.info(activate_comm)
 
     def rewrite_fits(self):
-        wave, flux, var, hd, wl_org = self.load_HERMES_data()
-        # header = fits.getheader(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
+        wave, flux, var, header, wl_org = self.load_HERMES_data()
+        header = fits.getheader(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
         logger.debug('Clipping negative flux values')
         # #Correct for atm extinction
         real_flux = (flux>=0)
@@ -318,16 +318,16 @@ class correct_spectrum:
         wl_org = wl_org[real_flux]
         logger.debug('Correcting for atm extinction')
         ext_wl, aext_coeff = np.loadtxt('/STER/karansinghd/PhD/ResponseCorrection/V1/atm_ext.dat', dtype=float, unpack=True)
-        ref_atm_cor = self.get_atm_ext_cor(ext_wl, aext_coeff, hd, wave)
+        ref_atm_cor = self.get_atm_ext_cor(ext_wl, aext_coeff, header, wave)
         atm_cor_flux = flux * ref_atm_cor
-        header=self.get_mfit_header(hd)
+        # header=self.get_mfit_header(header)
         #Write out new fits
         self.write_mfit_fits(wave, atm_cor_flux, var, header, wl_org)
         # exit()
 
     def get_mfit_header(self,hd):
         try:
-            hd['MJD-OBS']
+            hd['CD1_1']
             logger.debug('Header already Molecfit compliant')
             return
         except:
@@ -352,31 +352,23 @@ class correct_spectrum:
         # head = self.header
         # head = hdus[0].header
         # flx = fits.getdata(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits'))
-        # head = fits.getheader(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'))
+        head = fits.getheader(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'))
         # hdus[0].header = head
         # hdus[0].data = flx
-        hdus[0].header = self.header
-        hdus[0].header['STDNIGHT'] = self.STD_NIGHT
-        logger.info(f'Header updated for STDNIGHT = {self.STD_NIGHT}')
-        hdus[0].header['HISTORY'] = f'spectrum corrected for the instrumental response function fit with a spline (K. Dsilva)'
-        hdus[0].header['HISTORY'] = f'Keyword STDNIGHT included to indicate standard star observed on the same night (K.Dsilva)'
+        hdus[0].header['HISTORY'] = f'spectrum corrected for instrumental response function with a polynomial of degree 30 (K. Dsilva, T.Merle)'
 
-        #remove the primary image
-        hdus[0].data=[]
         #remove the BINTABLE from Molecfit
         logger.debug(hdus.info())
         _bt = hdus.pop(1)
         #define and add new BINTABLE
-        col_wave = fits.Column(name='wave', format='E',array=self.wave)
-        col_flux = fits.Column(name='flux', format='E',array=self.rc_flux_no_TAC)
-        col_err = fits.Column(name='err', format='E',array=self.rc_err_no_TAC)
-        col_flux_molec = fits.Column(name='flux_molec', format='E',array=self.rc_flux)
-        col_err_molec = fits.Column(name='err_molec', format='E',array=self.rc_err)
+        col_wave = fits.Column(name='wavelength', format='E',array=self.wave)
+        col_flux = fits.Column(name='flux', format='E',array=self.rc_flux)
+        col_err = fits.Column(name='flux_err', format='E',array=self.rc_err)
 
-        cols = fits.ColDefs([col_wave,col_flux,col_err,col_flux_molec,col_err_molec])
+        cols = fits.ColDefs([col_wave,col_flux,col_err])
         hdu_new = fits.BinTableHDU.from_columns(cols,name ='CRF_TABLE')
         hdus.append(hdu_new)
-        hdus[1].header['HISTORY'] = 'Flatfield and instrumental response corrected spectrum saved in columns: wave, flux, err, flux_molec, err_molec'
+        hdus[1].header['HISTORY'] = 'Flatfield and instrumental response corrected spectrum saved in columns: wavelength, flux and error'
         # logger.info(hdus.info())
         logger.info(f'New generated fits: {self.outpath}')
         hdus.writeto(self.outpath, overwrite=True)
@@ -385,7 +377,7 @@ class correct_spectrum:
     def write_mfit_fits(self, wl, flx, var, head, wl_original):
         '''Writes a fits file that is molecfit compliant
         '''
-        # head['EXTEND'] = True
+        head['EXTEND'] = True
         err = np.sqrt(var)
         ifn = Path(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
         try:
@@ -402,10 +394,8 @@ class correct_spectrum:
         col_wave_original = fits.Column(name='Wavelength_original', format='E', array=wl_original)
         cols = fits.ColDefs([col_wave_original,col_wave,col_flux,col_err])
         hdu_new = fits.BinTableHDU.from_columns(cols,name ='BINTABLE')
-        while len(hdu)>1:
-            a=hdu.pop()
         hdu.append(hdu_new)
-        # __b = hdu.pop(1)
+        __b = hdu.pop(1)
         # print(hdu.info())
         # exit()
         # hdu.insert(1,hdu_new)
@@ -448,7 +438,7 @@ class correct_spectrum:
         mpl.rc('lines',lw=3)
         fig,(ax1,ax2)=pl.subplots(nrows=2, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[3,1]},figsize=(8,8))
         ax1.plot(self.wave,Resp,'r',label='Median filtered response')
-        ax1.plot(self.wave,Poly,'k--',label=f'Spline fit')
+        ax1.plot(self.wave,Poly,'k--',label=f'Polynomial fit (k=30)')
         ax2.plot(self.wave,Resp-Poly,'k')
         ax2.axhline(y=0,color='r')
         ax2.xaxis.set_tick_params(labelsize=12)
@@ -464,48 +454,27 @@ class correct_spectrum:
         pl.savefig(f'plots/response_{self.night}_{self.unseq}.png')
         pl.close()
 
-    def fit_spline(self,r1):
-        x=self.wave
-        y=r1
-
-        left = max(4000,min(self.wave))
-        right = min(9000,max(self.wave))
-        #create knot array
-        violet = np.linspace(left,4580,10)
-        blue = np.linspace(4600,5525,25)
-        green = np.linspace(5530,6635,30)
-        red = np.linspace(6650,right,20)
-
-        knots = np.concatenate((violet,blue,green,red))
-
-        spl = us(x,y,t=knots)
-        return(spl(x))
-
 if __name__=='__main__':
-    # correct_spectrum(20101220,325228,'HD36267')
+    # df = pd.read_csv('prog28_good_20190702.csv',header=0,sep=',')
+    df = pd.read_csv('OverviewProgram28.csv',header=0,sep='|')
+    df.columns = [x.strip() for x in df.columns]
+    print('NEW',df.columns)
     # exit()
-    df = pd.read_csv('/STER/karansinghd/PhD/Projects/P28_c/p2_table.csv')
-    # df.stdunseq = df.stdunseq.astype('int32')
-    # df.stdnight = df.stdnight.astype('int32')
-    # df.stdunseq = df.stdunseq.astype('int32')
-    # print(df.stdunseq)
-    df = df.drop_duplicates(subset=['stdunseq'])
-    # print(df.stdunseq)
-    # exit()
-    with Path('./log_p2.log').open('w') as logfile:
+    with Path('./log.log').open('w') as logfile:
         for i,row in df.iterrows():
+            night = int(row['filename'].split("/")[4])
+            # object = " ".join(row['  starname  '].strip()).replace('*','_')
+            object = row['starname'].strip().replace(' ','_').replace('*','_')
+            unseq = int(row['unseq'])
+            # if night < 20111232:
+            #     logfile.write(f'{unseq},{night} - no meteo\n')
+            #     # print(,)
+            #     continue
+            # print(object,unseq,night)
             try:
-                night = int(row.stdnight)
-                unseq = int(row.stdunseq)
-                object = row.stdname
-                if object != 'HD220657':
-                    continue
                 print('-'*73)
                 correct_spectrum(night,unseq,object)
-                # correct_spectrum(row.stdnight,row.stdunseq,row.stdname)
                 print('-'*73)
-                # exit()
             except Exception as e:
                 logfile.write(f'{logger.critical(traceback.format_exc())}\n Error: {e}\n')
                 print(f'Error: {e}')
-                # exit()

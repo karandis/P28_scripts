@@ -1,9 +1,3 @@
-'''
-Script to make plots for the paper
-
-Creates a script showing the Molecfit correction in detail
-'''
-
 import numpy as np
 import pandas as pd
 import plotting
