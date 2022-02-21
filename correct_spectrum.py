@@ -1,7 +1,7 @@
 #---------------------------------------------------------------------------
 #Modified to input files from Pierre's ccf
 #---------------------------------------------------------------------------
-import get_response as gr
+import get_response_alhena as gr
 import pandas as pd
 from astropy.io import fits
 from scipy import interpolate as si

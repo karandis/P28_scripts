@@ -24,8 +24,6 @@ METHOD : Takes in a night as input and check:
 
 '''
 #------------------------------- IMPORTS  --------------------------------------
-import traceback
-import sys
 import datetime as dt
 from pathlib import Path
 import numpy as np
@@ -46,6 +44,8 @@ import RegscorePy as rp #Module to get the Bayesian Information Criterion
 #---------------------------- REFERENCE SEDs -----------------------------------
 #The reference SEDs are corrected for reddening (interstellar extinction)
 #scripts to redden the SEDs can be found in /STER/karansinghd/PhD/ResponseCorrection/V1/InputFiles/
+#HD152614, HD36267,HD118098,HD14055,HD87887,HD184006,HD46300,HD149212,HD147449,GSC4293-0432,HD214994,HD42818,HD56169,HD185395,HD206826,HD84937,HD220657
+#
 ref_sed = {'HD152614': 'HD152614.rgs',                                       # B
            'HD36267': 'HD36267.rgs', 'hd36267': 'HD36267.rgs',       # B
            'HD118098': 'HD118098.rgs', 'HD 118098': 'HD118098.rgs',  # A
@@ -162,7 +162,7 @@ class response:
             self.unseq[i] = row['unseq']
             self.object[i] = row['object']
             self.night[i] = row['night']
-            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
+            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
             if self.rpath[i].is_file() and not overwrite:
                 logger.info(f'{self.rpath[i]} exists')
                 continue
@@ -170,7 +170,7 @@ class response:
             logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
             self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
             self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
-            self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
+            self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf_TAC.fits')
             #Run Molecfit if not already done
             if not self.filename[i].is_file():
                 logger.info('Molecfit will be run as TAC file does not exist')
@@ -209,7 +209,7 @@ class response:
             self.save_response()
             logger.info(f'Response successfully saved to {self.rpath[i]}')
         if len(self.list_failed):
-            np.savetxt(Path(f'/STER/karansinghd/PhD/Projects/ResponseCorrection/Failed/ListFailed_{self.night[i]}.txt'),self.list_failed,fmt="%8d"+"%8d"+"%50s")
+            np.savetxt(Path(f'Failed/ListFailed_{self.night[i]}.txt'),self.list_failed,fmt="%8d"+"%8d"+"%50s")
             logger.info('Saved list of failed corrections')
 
     def load_FITS_table_data(self):
@@ -240,8 +240,8 @@ class response:
         specinterpol = si.interp1d(self.wave[i],self.flux,fill_value='extrapolate')
         velocity_array_full = np.array([])
         ccf_full = np.array([])
-        #Look from -150 to +150 Km/s and get the CCF
-        for k in np.arange(-150,150,0.25):
+        #Look from -250 to +250 Km/s and get the CCF
+        for k in np.arange(-250,250,0.25):
             linesred = np.add(lines,np.array(1000 * k/sc.c * lines))
             fluxred = specinterpol(linesred)
             velocity_array_full = np.append(velocity_array_full,float(k))
@@ -324,6 +324,10 @@ class response:
         #Giving a higher weight to the edges improves the fit!
         weights = np.ones((len(y)))
         weights[2000:len(y)-2000] = 0.8
+        weights[80000:11000] = 1
+        # print(len(y),self.wave[i][120000])
+        # exit()
+        # c = poly.polyfit(x,y,40,w=weights)
         c = poly.polyfit(x,y,d,w=weights)
         # c = poly.polyfit(x,y,d)
         polynomial = poly.polyval(x,c)
@@ -379,8 +383,8 @@ class response:
                         line = f'user_workdir: {self.mfit_object_path}'
                         logger.debug(f'user_workdir updated: {self.mfit_object_path}')
                     elif line.strip().startswith('filename'):
-                        line=f'filename: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'
-                        logger.debug(f'filename updated: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+                        line=f'filename: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits'
+                        logger.debug(f'filename updated: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
                     elif line.strip().startswith('wrange_include'):
                         line=f'wrange_include: {self.mfit_object_path}/include.dat'
                         logger.debug(f'wrange_include updated: {self.mfit_object_path}/include.dat')
@@ -421,11 +425,11 @@ class response:
             Wavelength_original: barycentric correction included
         '''
         #The input file names
-        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
-        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
+        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
 
-        ifn_var = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
-        ifn_var_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
+        ifn_var = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_cf.fits')
+        ifn_var_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_cf.fits')
             #The data
         try:
             flux, head = fits.getdata(ifn,header=True)
@@ -479,8 +483,8 @@ class response:
         '''Called by rewrite_fits() to save a FITS file that is molecfit compliant
         '''
         err = np.sqrt(var)
-        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
-        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
+        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
         try:
             hdul = fits.open(ifn)
         except:
@@ -689,16 +693,14 @@ class response:
 
 if __name__=='__main__':
     # x=response(night=20180607,tolerance=1,overwrite=True)
-    # x=response(night=20190504,tolerance=None,overwrite=False)
-    with Path('./response.log').open('w') as logfile:
-        startdate=dt.date(year=2018,month=1,day=1)
-        delta = dt.timedelta(days=1)
-        enddate = dt.date(year=2020,month=12,day=31)
-        while startdate <= enddate:
-            try:
-                x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=False)
-                startdate += delta
-            except Exception as e:
-                logfile.write(f'{startdate.strftime(format="%Y%m%d")},{logger.critical(traceback.format_exc())}\n Error: {e}\n')
-                print(e)
-                startdate += delta
+    x=response(night=20170506,tolerance=None,overwrite=False)
+    # startdate=dt.date(year=2013,month=1,day=1)
+    # delta = dt.timedelta(days=1)
+    # enddate = dt.date(year=2019,month=7,day=10)
+    # while startdate <= enddate:
+    #     try:
+    #         x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=False)
+    #         startdate += delta
+    #     except Exception as e:
+    #         print(e)
+    #         startdate += delta

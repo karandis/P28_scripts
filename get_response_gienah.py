@@ -24,8 +24,6 @@ METHOD : Takes in a night as input and check:
 
 '''
 #------------------------------- IMPORTS  --------------------------------------
-import traceback
-import sys
 import datetime as dt
 from pathlib import Path
 import numpy as np
@@ -691,9 +689,9 @@ if __name__=='__main__':
     # x=response(night=20180607,tolerance=1,overwrite=True)
     # x=response(night=20190504,tolerance=None,overwrite=False)
     with Path('./response.log').open('w') as logfile:
-        startdate=dt.date(year=2018,month=1,day=1)
+        startdate=dt.date(year=2017,month=1,day=1)
         delta = dt.timedelta(days=1)
-        enddate = dt.date(year=2020,month=12,day=31)
+        enddate = dt.date(year=2018,month=12,day=31)
         while startdate <= enddate:
             try:
                 x=response(night=int(startdate.strftime(format="%Y%m%d")),tolerance=None,overwrite=False)

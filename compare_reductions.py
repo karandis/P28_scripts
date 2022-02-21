@@ -1,6 +1,3 @@
-'''
-Script to compare the reductions from April 2021 (P28_c) and Jan 2022 (P28_cr_2022)
-'''
 import numpy as np
 import pandas as pd
 from pathlib import Path
