@@ -1,26 +1,14 @@
 '''
 Hermes Response Correction v1.0
 Author : Karan Dsilva (karan.dsilva@kuleuven.be)
-Adapted with input from T. Merle
-UPDATE: *BD+174708 has been dropped due to poor corrections
-        *The saved response has the polynomial as well as the median filtered
-        saved.
-        *saving the response with pandas, tab delimited
-        *datetime corrected when looking for prog 2 stars using tolerance
-        *normalization from  1 to 3 instead of -1 to 1
-        *residuals plotted
-        *Polynomial chosen based on Bayesian Information Criterion
-        (BIC). Degree 30 has the lowest BIC and hence is the best model.
-        *Both responses of the night kept in the form of arrays
-        *added comments on all class variables
-        28/01/2022:
-        update: mean RV used to correct for all P2 stars except GSC-
+UPDATE: 28/01/2022:
+        mean RV used to correct for all P2 stars except GSC-
 
 METHOD : Takes in a night as input and check:
 
     a. if there is a Program 2 star observed that night
     b. if yes, is it a star for which we have a good model
-    c. if no to any of those questions, look for the closest P2 star in time
+    c. if no to any of those questions, look for the closest P2 star in time (within the provided tolerance)
     d. determine the instrumental response for the night
     e. save it to text and plot the response
 
@@ -105,7 +93,6 @@ class response:
         #I/O
         HermesPath: Path to the HERMES database
         Mfit_dir: Path to the main Molecfit directory
-        Mask_path: Path to list of Balmer lines for RV correction
         InputFilesDir: Path to model SEDs
         rpath:  Path to the saved response
         filename: Path to the Molecfit corrected spectrum
@@ -117,28 +104,25 @@ class response:
         mfit_object_path: Path to the Molecfit folder containing
                           observations of that specific star
         par_path: Path to the Molecfit input file
+        redo_molec: keyword to redo the Molecfit run
 
         #Fallbacks and indicators
+        flag: to indicate if the spectrum is reduced or if it is only in the HERMES Overview file (problem with reduction).
         key: 1 if meteo data is available else 0
-        list_failed: list of failed attempts with unseq and error message
+        list_failed: list of failed reductions for that night given tolerance
 
         #The data
         wave: the original wavelength array (NOTE: negative  flux pixels clipped)
         flux: the original (uncorrected) flux array
         flux_corr: the telluric absorption corrected (TAC) flux
-        rv: Radial velocity (RV) from bisector analysis (CCF) using Balmer lines
-        err_rv: the error on the RV
+        rv: Radial velocity (RV) from dictionary calculated by Hans (2022 Jan)
         model_flux: flux from the model SED
         response: the median-filtered response (flux_corr/model_flux)
 
-        #Polynomial fitting stuff
-        wl_norm: normalized wavelength array for polynomial fit
+        #Spline fitting stuff
+        knots: knotpoints used to fit the spline for the response.
         spline_fit: the spline fit to the response (NEW updated)
-        poly_degree: degree of the polynomial
         residuals: residuals of the fit
-        rms: RMS value of the residuals
-        bic: the Bayesian Information Criterion (see code for formula)
-
 
     '''
     #Indices for load_FITS_table_data
@@ -148,27 +132,7 @@ class response:
     #Paths to frequently used directories
     HermesPath = Path('/STER/mercator/hermes')
     Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit')
-    Mask_path = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/Balmer.list')
     InputFilesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/ModelSEDs')
-    LinesDir = Path('/STER/karansinghd/PhD/ResponseCorrection/VelocityCorrection/masks/')
-
-    #Initialize the variables we want to use outside of the class as arrays
-    night = dict()
-    object = dict()
-    unseq = dict()
-    rpath = dict()
-    par_path = dict()
-    filename = dict()
-    wave = dict()
-    response = dict()
-    residuals = dict()
-    spline_fit = dict()
-    wl_norm = dict()
-    rv = dict()
-    model_flux=dict()
-
-
-    poly_degree = 30
 
     def __init__(self,night,tolerance=None,overwrite=False):
         self.redo_molec=False
@@ -187,20 +151,20 @@ class response:
             global i
             i = j
             row = p2_info.iloc[i]
-            self.unseq[i] = row['unseq']
-            self.object[i] = row['object']
-            self.night[i] = row['night']
-            self.rpath[i] = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.txt')
-            if self.rpath[i].is_file() and not overwrite:
-                logger.info(f'{self.rpath[i]} exists')
-                return
-            print('##########################################################')
-            logger.info(f'NIGHT: {self.night[i]}, UNSEQ: {self.unseq[i]}, OBJECT: {self.object[i]}')
-            self.mfit_object_path = self.Mfit_dir.joinpath(self.object[i])
-            self.par_path[i] = self.mfit_object_path/Path(f'{self.object[i]}_{self.unseq[i]}.par')
-            self.filename[i] = Path(f'{self.mfit_object_path}/output/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
+            self.unseq = row['unseq']
+            #remove one bad model
+            if self.unseq == 325226:
+                continue
+            self.object = row['object']
+            self.night = row['night']
+            self.rpath = Path(f'/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/{self.night}_{self.object}_{self.unseq}.txt')
+            print('----------------------------------------------------')
+            logger.info(f'NIGHT: {self.night}, UNSEQ: {self.unseq}, OBJECT: {self.object}')
+            self.mfit_object_path = self.Mfit_dir.joinpath(self.object)
+            self.par_path = self.mfit_object_path/Path(f'{self.object}_{self.unseq}.par')
+            self.filename = Path(f'{self.mfit_object_path}/output/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
             #Run Molecfit if not already done
-            if (not self.filename[i].is_file()) or (self.filename[i].is_file() and self.redo_molec):
+            if (not self.filename.is_file()) or (self.filename.is_file() and self.redo_molec):
                 logger.info('Molecfit will be run as TAC file does not exist')
                 self.prepare_molecfit_files()
                 self.modify_par_file()
@@ -214,26 +178,34 @@ class response:
                     if not (self.flag and self.flag_var):
                         e = f'One of the input files is missing - flux: {self.flag} and/or variance: {self.flag_var}'
                     logger.critical(f'Exception: {e}')
-                    self.list_failed.append([self.night[i],self.unseq[i],e])
+                    self.list_failed.append([self.night,self.unseq,e])
                     continue
                 self.run_molecfit()
             try:
-                self.wave[i], self.flux, self.flux_corr = self.load_FITS_table_data()
+                self.wave, self.flux, self.flux_corr = self.load_FITS_table_data()
                 logger.info('Successfully loaded Molecfit corrected spectrum')
             except Exception as e:
                 logger.critical(f'Problem with the Molecfit corrected spectrum: {e}')
-                self.list_failed.append([self.night[i],self.unseq[i],e])
+                self.list_failed.append([self.night,self.unseq,e])
                 continue
-            self.rv[i] = self.calc_rad_vel()
-            self.wave[i] = self.correct_vel_shift()
-            self.model_flux[i] = self.load_model_SED()
-            self.response[i] = self.get_response()
-            self.spline_fit[i] = self.fit_spline()
-            self.residuals[i] =  self.response[i] - self.spline_fit[i]
-            logger.info(f'Spline fit was successful.')
-            self.create_plots()
-            self.save_response()
-            logger.info(f'Response successfully saved to {self.rpath[i]}')
+            self.rv = self.calc_rad_vel()
+            self.wave = self.correct_vel_shift()
+            self.model_flux = self.load_model_SED()
+            if self.rpath.is_file() and not overwrite:
+                logger.info(f'{self.rpath} exists')
+                data = pd.read_csv(self.rpath,sep='\t',header=0,encoding='utf-8',engine='python')
+                self.wave = data.wavelength.to_numpy()
+                self.response = data.response.to_numpy()
+                self.spline_fit = data.spline.to_numpy()
+                self.residuals =  self.response - self.spline_fit
+            else:
+                self.response = self.get_response()
+                self.spline_fit = self.fit_spline()
+                self.residuals =  self.response - self.spline_fit
+                logger.info(f'Spline fit was successful.')
+                self.create_plots()
+                self.save_response()
+                logger.info(f'Response successfully saved to {self.rpath}')
             return
 
 
@@ -241,8 +213,8 @@ class response:
         '''
         Function to load table data from the FITS file output by Molecfit.
         '''
-        hdul = fits.open(self.filename[i])
-        head = fits.getheader(self.filename[i])
+        hdul = fits.open(self.filename)
+        head = fits.getheader(self.filename)
         table_data = hdul[1].data
         wave = table_data.field(self.wavelength_original_index)
         flux = table_data.field(self.flux_index)
@@ -261,34 +233,34 @@ class response:
         Update 28/01/2022: Scrapping the majority of this function. No need to calc RVs, we just read them from a file!
         '''
         global i
-        if self.object[i] == 'GSC4293-0432':
+        if self.object == 'GSC4293-0432':
             #read RV from file!
             rvdat =  pd.read_csv('/STER/karansinghd/PhD/ResponseCorrection/RadialVelocitiesGSC4293-0432.vrdata',delim_whitespace=True,header=None)
             rvdat.columns=['JD','vrad','sigma','unseq']
-            rv = rvdat.loc[rvdat.unseq==self.unseq[i]].vrad.to_numpy()[0]
+            rv = rvdat.loc[rvdat.unseq==self.unseq].vrad.to_numpy()[0]
         else:
-            rv = RVs[self.object[i]]
+            rv = RVs[self.object]
 
         return rv
 
     def correct_vel_shift(self):
         '''Function to correct for the RV shift before getting  the  response'''
-        radvel = self.rv[i]*1000 #in m/s
-        logger.info(f'Correcting for radial velocity of:{self.rv[i]:.2f} Km/s')
-        return self.wave[i]*(1+radvel/sc.c)
+        radvel = self.rv*1000 #in m/s
+        logger.info(f'Correcting for radial velocity of:{self.rv:.2f} Km/s')
+        return self.wave*(1+radvel/sc.c)
 
     def load_model_SED(self):
         '''Function to load the model SED of the corresponding program 2 star'''
-        logger.debug(f'Model Path: {self.InputFilesDir}/{ref_sed[self.object[i]]}')
-        ref_wave, ref_flux = np.genfromtxt(fname=f'{self.InputFilesDir}/{ref_sed[self.object[i]]}', unpack=True)
+        logger.debug(f'Model Path: {self.InputFilesDir}/{ref_sed[self.object]}')
+        ref_wave, ref_flux = np.genfromtxt(fname=f'{self.InputFilesDir}/{ref_sed[self.object]}', unpack=True)
         #interpolate the model at the wavelengths of the spectrum
-        model_flux = si.interp1d(ref_wave, ref_flux, kind='linear',fill_value='extrapolate')(self.wave[i])
+        model_flux = si.interp1d(ref_wave, ref_flux, kind='linear',fill_value='extrapolate')(self.wave)
         logger.info('Successfully loaded model SED')
         return model_flux
 
     def get_response(self):
         '''Function to get the response and apply a median filter '''
-        self.rough_response = self.flux_corr/self.model_flux[i]
+        self.rough_response = self.flux_corr/self.model_flux
         #2 median filters to deal with the edges
         R1_1 = mf(self.rough_response,1001)
         R1_2 = mf(self.rough_response,11)
@@ -296,40 +268,17 @@ class response:
         R1_1[-40:] = R1_2[-40:]
         return R1_1
 
-    def get_norm_wl_array(self):
-        '''Function to normalize the array so that a polynomial fit of a high
-        degree is possible. The array has to be sorted (it is by default)
-        Wavelength array scaled between 1 and 3'''
-        maximum = self.wave[i][-1]
-        minimum = self.wave[i][0]
-        factor = (maximum)/2
-        return (((self.wave[i]-minimum)/factor)+1).astype(float)
-
-    def fit_poly(self,d):
-        '''Function to fit a polynomial to the median filtered response
-        update (20201020): changed to spline fitting :) '''
-        x=self.wl_norm[i]
-        y=self.response[i]
-        # d=self.poly_degree
-        #Giving a higher weight to the edges improves the fit!
-        weights = np.ones((len(y)))
-        weights[2000:len(y)-2000] = 0.8
-        c = poly.polyfit(x,y,d,w=weights)
-        # c = poly.polyfit(x,y,d)
-        polynomial = poly.polyval(x,c)
-        logger.info(f'Fit the response with a polynomial of degree {self.poly_degree}')
-        return polynomial
 
     def fit_spline(self):
-        x=self.wave[i]
-        y=self.response[i]
+        x=self.wave
+        y=self.response
 
         left = min(x)+10
         right = max(x)-10
 
         #create knot array
         added = np.array([3781,3852,3913,3952])
-        if self.object[i] =='HD84937':
+        if self.object =='HD84937':
             violet = np.linspace(4000,4340,25)
         else:
             violet = np.linspace(4000,4280,20)
@@ -344,24 +293,10 @@ class response:
         spl = us(x,y,t=knots)
         return(spl(x))
 
-    def calc_goodness_of_fit(self,d):
-        '''Function to calc RMS and BIC value of the fit.
-        '''
-        logger.info('Calculating goodness of fit')
-
-        y=self.residuals[i]
-        N=len(y)
-
-        rms = np.sqrt(np.sum(y**2)/N)
-        BIC=rp.bic.bic(self.response[i],self.spline_fit[i],N)
-
-        return rms,BIC
-
-
     def save_response(self):
         '''Function to save the response as a text file'''
-        savefile=pd.DataFrame({'wavelength':self.wave[i],'spline':self.spline_fit[i],'response':self.response[i]})
-        savefile.to_csv(self.rpath[i],header=True,index=False,sep='\t')
+        savefile=pd.DataFrame({'wavelength':self.wave,'spline':self.spline_fit,'response':self.response})
+        savefile.to_csv(self.rpath,header=True,index=False,sep='\t')
 
     def prepare_molecfit_files(self):
         '''Function to create Molecfit input directories and input files.
@@ -385,7 +320,7 @@ class response:
     def modify_par_file(self):
         '''Function to modify the template parameter file to add correct paths and files
         '''
-        with self.par_path[i].open(mode='w') as fout:
+        with self.par_path.open(mode='w') as fout:
             with self.Mfit_dir.joinpath('template.par').open(mode="r") as f:
                 lines=f.readlines()
                 for line in lines:
@@ -393,8 +328,8 @@ class response:
                         line = f'user_workdir: {self.mfit_object_path}'
                         logger.debug(f'user_workdir updated: {self.mfit_object_path}')
                     elif line.strip().startswith('filename'):
-                        line=f'filename: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'
-                        logger.debug(f'filename updated: {self.mfit_object_path}/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+                        line=f'filename: {self.mfit_object_path}/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'
+                        logger.debug(f'filename updated: {self.mfit_object_path}/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
                     elif line.strip().startswith('wrange_include'):
                         line=f'wrange_include: {self.mfit_object_path}/include.dat'
                         logger.debug(f'wrange_include updated: {self.mfit_object_path}/include.dat')
@@ -408,8 +343,8 @@ class response:
                         line=f'output_dir: {self.mfit_object_path}/output'
                         logger.debug(f'output_dir updated: {self.mfit_object_path}/output')
                     elif line.strip().startswith('output_name'):
-                        line=f'output_name: {self.object[i]}_{self.unseq[i]}'
-                        logger.debug(f'output name updated: {self.object[i]}_{self.unseq[i]}')
+                        line=f'output_name: {self.object}_{self.unseq}'
+                        logger.debug(f'output name updated: {self.object}_{self.unseq}')
                     fout.write(line)
         logger.info("Molecfit parameter file created successfully")
 
@@ -421,7 +356,7 @@ class response:
         #Command to remove any previous molecfit runs
         clean = sp.run('rm -rf /tmp/mol*',shell=True)
         logger.debug(f'{clean} ran with returncode {clean.returncode}')
-        activate_comm = sp.run(f'source /home/karansinghd/.bashrc; conda activate py27; /home/karansinghd/Applications/Molecfit/bin/molecfit {self.par_path[i]};/home/karansinghd/Applications/Molecfit/bin/calctrans {self.par_path[i]};conda deactivate',shell=True)
+        activate_comm = sp.run(f'source /home/karansinghd/.bashrc; conda activate py27; /home/karansinghd/Applications/Molecfit/bin/molecfit {self.par_path};/home/karansinghd/Applications/Molecfit/bin/calctrans {self.par_path};conda deactivate',shell=True)
         logger.info(f'Molecfit ran with a returncode {activate_comm.returncode} (0 = successful)')
         logger.debug(activate_comm)
 
@@ -435,11 +370,11 @@ class response:
             Wavelength_original: barycentric correction included
         '''
         #The input file names
-        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
-        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn = self.HermesPath.joinpath(f'{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn_old = self.HermesPath.joinpath(f'{self.night}/reduced/{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
 
-        ifn_var = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
-        ifn_var_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
+        ifn_var = self.HermesPath.joinpath(f'{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
+        ifn_var_old = self.HermesPath.joinpath(f'{self.night}/reduced/{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_mergedVar_c.fits')
             #The data
         try:
             flux, head = fits.getdata(ifn,header=True)
@@ -450,7 +385,7 @@ class response:
                 self.flag=1
             except:
                 self.flag=0
-                logger.critical(f'Cannot find the spectrum (UNSEQ:{self.unseq[i]}, NIGHT:{self.night[i]}) in the HERMES database!')
+                logger.critical(f'Cannot find the spectrum (UNSEQ:{self.unseq}, NIGHT:{self.night}) in the HERMES database!')
         try:
             var = fits.getdata(ifn_var)
             self.flag_var=1
@@ -460,7 +395,7 @@ class response:
                 self.flag_var=1
             except:
                 self.flag_var=0
-                logger.critical(f'Cannot find the variance (UNSEQ:{self.unseq[i]}, NIGHT:{self.night[i]}) in the HERMES database!')
+                logger.critical(f'Cannot find the variance (UNSEQ:{self.unseq}, NIGHT:{self.night}) in the HERMES database!')
         try:
             head['HUM_MET']
             self.key=1
@@ -493,15 +428,15 @@ class response:
         '''Called by rewrite_fits() to save a FITS file that is molecfit compliant
         '''
         err = np.sqrt(var)
-        ifn = self.HermesPath.joinpath(f'{self.night[i]}/reduced/00{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
-        ifn_old = self.HermesPath.joinpath(f'{self.night[i]}/reduced/{self.unseq[i]}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn = self.HermesPath.joinpath(f'{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
+        ifn_old = self.HermesPath.joinpath(f'{self.night}/reduced/{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits')
         try:
             hdul = fits.open(ifn)
         except:
             try:
                 hdul = fits.open(ifn_old)
             except:
-                logger.critical(f'Cannot find the spectrum (UNSEQ:{self.unseq[i]}, NIGHT:{self.night[i]}) in the HERMES database!')
+                logger.critical(f'Cannot find the spectrum (UNSEQ:{self.unseq}, NIGHT:{self.night}) in the HERMES database!')
                 return
         hdul[0].header = head
         hdul[0].data = flx
@@ -681,12 +616,12 @@ class response:
         logger.info('Creating a plot of the fit')
 
         fig,(ax3,ax4,ax1,ax2)=pl.subplots(nrows=4, ncols=1, sharex=True, sharey=False, gridspec_kw={'height_ratios':[1,1,1,1]},figsize=(8,8))
-        ax3.plot(self.wave[i],self.flux_corr)
-        ax4.plot(self.wave[i],self.model_flux[i],zorder=12)
-        ax1.plot(self.wave[i],self.rough_response,'b',label='Rough response',alpha=0.5)
-        ax1.plot(self.wave[i],self.response[i],'r',label='Median filtered response')
-        ax1.plot(self.wave[i],self.spline_fit[i],'k--',label=f'Spline fit')
-        ax2.plot(self.wave[i],100*np.divide(self.residuals[i],self.spline_fit[i]),'k')
+        ax3.plot(self.wave,self.flux_corr)
+        ax4.plot(self.wave,self.model_flux,zorder=12)
+        ax1.plot(self.wave,self.rough_response,'b',label='Rough response',alpha=0.5)
+        ax1.plot(self.wave,self.response,'r',label='Median filtered response')
+        ax1.plot(self.wave,self.spline_fit,'k--',label=f'Spline fit')
+        ax2.plot(self.wave,100*np.divide(self.residuals,self.spline_fit),'k')
         ax2.axhline(y=0,color='r')
 
         [ax1.axvline(x=j,color='grey',alpha=0.8) for j in self.knots]
@@ -695,12 +630,12 @@ class response:
         ax1.set_ylabel('ADU')
         ax2.set_ylabel('Residuals (%)')
 
-        ax3.set_title(f'NIGHT: {self.night[i]}, OBJECT:{self.object[i]}, UNSEQ:{self.unseq[i]}')
+        ax3.set_title(f'NIGHT: {self.night}, OBJECT:{self.object}, UNSEQ:{self.unseq}')
         fig.tight_layout()
-        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png',format='png')
+        pl.savefig(f'/STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night}_{self.object}_{self.unseq}.png',format='png')
         # pl.show()
         pl.close()
-        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night[i]}_{self.object[i]}_{self.unseq[i]}.png')
+        logger.info(f'Figure saved to /STER/karansinghd/PhD/Projects/P28_c/plots_2022/{self.night}_{self.object}_{self.unseq}.png')
 
 
 if __name__=='__main__':

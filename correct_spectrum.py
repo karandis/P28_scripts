@@ -16,18 +16,16 @@ import traceback
 from scipy.interpolate import LSQUnivariateSpline as us
 from astropy.time import Time
 import shutil
-#---------------------------------------------------------------------------
+#----------------------------------------------------------------------------
 HermesPath = Path('/STER/mercator/hermes/')
 LocalPath = Path('/STER/karansinghd/PhD/Projects/P28_c/')
 Mfit_dir = Path('/STER/karansinghd/PhD/ResponseCorrection/Molecfit/')
-#----------------------------------------------------------------
+#----------------------------------------------------------------------------
 logging.basicConfig(level=logging.DEBUG,format='%(asctime)s: [%(name)s:%(levelname)s] %(message)s',datefmt='%d-%m %H:%M')
 logger = logging.getLogger("CORRECT SPECTRUM")
-#----------------------------------------------------------------
-bad_models = ['HD185395','HD206826','HD220657']
-
+#----------------------------------------------------------------------------
 df_stdinfo = pd.DataFrame({'unseq':[],'stdunseq':[],'stdname':[],'night':[],'stdnight':[]})
-##########################################################################
+#----------------------------------------------------------------------------
 class correct_spectrum:
     def __init__(self,night,unseq,object):
         overwrite = True
@@ -47,7 +45,6 @@ class correct_spectrum:
         self.mfit_object_path = LocalPath.joinpath(self.object)
         self.par_path=self.mfit_object_path/Path(f'{self.object}_{self.unseq}.par')
         self.filename=Path(f'{self.mfit_object_path}/output/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c_TAC.fits')
-        # self.header = fits.getheader(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
         if not self.filename.is_file():
             logger.info('Molecfit will be run as TAC file does not exist')
             self.prepare_molecfit_files()
@@ -63,11 +60,9 @@ class correct_spectrum:
 
         logger.info('Successfully loaded Molecfit corrected spectrum')
         self.response=self.load_response()
-        # return
 
         self.rc_flux = self.flux/self.response
         self.rc_flux_no_TAC = self.flux_no_TAC/self.response
-
         self.rc_err = self.flux_err/self.response
         self.rc_err_no_TAC = self.flux_no_TAC_err/self.response
 
@@ -77,58 +72,22 @@ class correct_spectrum:
 
 
     def load_response(self):
-        resp_paths=list(Path('/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/').glob(f'{self.night}_*.txt'))
-        if len(resp_paths):
+        resp = gr.response(night=self.night,tolerance=100)
+        if resp.night == self.night:
             self.STD_NIGHT=1
-            logger.info(f'{len(resp_paths)} responses available for {self.night}')
-
-            for p in resp_paths:
-
-                logger.info(f'Processing response: {p}')
-                self.stdnight=int(p.stem.split('_')[0])
-                self.stdname=p.stem.split('_')[1]
-                self.stdunseq=int(p.stem.split('_')[2])
-                resp,poly = self.load_and_interpolate(p)
-                self.create_plots(resp,poly)
-                return poly
-
         else:
-            self.STD_NIGHT = 0
-            logger.info('get_response.py has to be run!')
-            resp = gr.response(night=self.night, tolerance=60, overwrite = False)
-            logger.info(f'{len(resp.unseq)} responses available to use')
+            self.STD_NIGHT=0
+        self.stdname=resp.object
+        self.stdunseq=resp.unseq
+        self.stdnight=resp.night
+        poly =self.load_and_interpolate(resp)
+
+        return poly
 
 
-            indices = resp.unseq.keys()
-            resp_paths = []
-            for j in indices:
-                if resp.unseq[j] == 325226: #remove the one troublesome model
-                    continue
-                try:
-                    resp_paths.append(Path(resp.rpath[j]))
-                except:
-                    continue
+    def load_and_interpolate(self,resp):
 
-            for p in resp_paths:
-            # for j in indices:
-                if p.stem.split('_')[1] in bad_models:
-                    continue
-                try:
-                    resp,poly = self.load_and_interpolate(p)
-                    self.stdname=p.stem.split('_')[1]
-                    self.stdunseq=int(p.stem.split('_')[2])
-                    self.stdnight=int(p.stem.split('_')[0])
-                    self.create_plots(resp,poly)
-                    return poly
-                except:
-                    continue
-
-
-    def load_and_interpolate(self,p):
-        obj = p.stem.split('_')[1]
-        data = pd.read_csv(p,sep='\t',header=0,encoding='utf-8',engine='python')
-
-        idx1=(self.wave>=min(data['wavelength'])) & (self.wave<=max(data['wavelength']))
+        idx1=(self.wave>=min(resp.wave)) & (self.wave<=max(resp.wave))
 
         self.wave = self.wave[idx1]
         self.flux = self.flux[idx1]
@@ -136,12 +95,9 @@ class correct_spectrum:
         self.flux_err = self.flux_err[idx1]
         self.flux_no_TAC_err = self.flux_no_TAC_err[idx1]
 
-        r1 = si.interp1d(data['wavelength'],data['response'],kind='linear')(self.wave)
-        try:
-            p1 = si.interp1d(data['wavelength'],data['spline'],kind='linear')(self.wave)
-        except:
-            p1 = self.fit_spline(r1,obj)
-        return r1,p1
+        r1 = si.interp1d(resp.wave,resp.response,kind='linear')(self.wave)
+        p1 = si.interp1d(resp.wave,resp.spline_fit,kind='linear')(self.wave)
+        return p1
 
     def get_atm_ext_cor(self, ext_wl, aext_coeff, head, wl):
         m = (min(wl) < ext_wl) & (ext_wl < max(wl))
@@ -273,17 +229,12 @@ class correct_spectrum:
         if not os.path.isdir(self.mfit_object_path/Path('output')):
             os.mkdir(self.mfit_object_path/Path('output'))
         #copy necessary parameter files
-        # Command1 = sp.run(f'cp {self.Mfit_dir}/template.par {self.par_path}', shell=True)
-        # print(f'Command {Command1.args} ran with returncode {Command1.returncode}')string = f'I am {num:{".2f" if ppl else ""}}'
         Command2 = sp.run(f'cp {Mfit_dir}/include.dat {self.mfit_object_path}/include.dat', shell=True)
         logger.debug(f'Command {Command2.args} ran {"successfully" if Command2.returncode ==0 else "unsuccessfully"}')
-        # logger.debug(f'Command {Command2.args} ran with returncode {Command2.returncode}')
         Command3 = sp.run(f'cp {Mfit_dir}/exclude_w.dat {self.mfit_object_path}/exclude_w.dat', shell=True)
         logger.debug(f'Command {Command3.args} ran {"successfully" if Command3.returncode ==0 else "unsuccessfully"}')
-        # logger.debug(f'Command {Command3.args} ran with returncode {Command3.returncode}')
         Command4 = sp.run(f'cp {Mfit_dir}/exclude_p.dat {self.mfit_object_path}/exclude_p.dat', shell=True)
         logger.debug(f'Command {Command4.args} ran {"successfully" if Command4.returncode ==0 else "unsuccessfully"}')
-        # logger.debug(f'Command {Command4.args} ran with returncode {Command4.returncode}')
         logger.info('Molecfit parameter files prepared')
 
 
@@ -325,7 +276,6 @@ class correct_spectrum:
 
     def rewrite_fits(self):
         wave, flux, var, hd, wl_org = self.load_HERMES_data()
-        # header = fits.getheader(f'/STER/mercator/hermes/{self.night}/reduced/00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits')
         logger.debug('Clipping negative flux values')
         # #Correct for atm extinction
         real_flux = (flux>=0)
@@ -367,12 +317,6 @@ class correct_spectrum:
         '''write the final output fits'''
         # logger.info(f'Trying to open {self.filename}')
         hdus = fits.open(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'))
-        # head = self.header
-        # head = hdus[0].header
-        # flx = fits.getdata(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_cf.fits'))
-        # head = fits.getheader(self.mfit_object_path / Path(f'00{self.unseq}_HRF_OBJ_ext_CosmicsRemoved_log_merged_c.fits'))
-        # hdus[0].header = head
-        # hdus[0].data = flx
         hdus[0].header = self.header
         hdus[0].header['STDNIGHT'] = self.STD_NIGHT
         logger.info(f'Header updated for STDNIGHT = {self.STD_NIGHT}')
@@ -423,16 +367,8 @@ class correct_spectrum:
         while len(hdu)>1:
             a=hdu.pop()
         hdu.append(hdu_new)
-        # __b = hdu.pop(1)
-        # print(hdu.info())
-        # exit()
-        # hdu.insert(1,hdu_new)
-        # logger.debug(hdu.info())
         hdu[1].header['HISTORY'] = 'BINTABLE added for molecfit usage'
         hdu[1].header['HISTORY'] = 'COLUMNS: Wavelength (w/o Bar Cor), Flux, Error and original Wavelength array (K. Dsilva)'
-        # pl.plot(wl,flx)
-        # pl.plot(wl_original,flx,'k')
-        # pl.show()
         ofn = self.mfit_object_path / Path(ifn.stem + ifn.suffix)
         logger.debug(f'New generated fits: {ofn}')
         hdu.writeto(ofn, overwrite=True)
@@ -448,16 +384,11 @@ class correct_spectrum:
         mpl.rc('lines',lw=linewidth,ls=linestyle,c=color)
         fig,ax1=pl.subplots()
         ax1.plot(xdata,ydata)
-        # minimum = 0.9 * min(ydata[(xdata > 5000) & (xdata < 6000)])
         ax1.xaxis.set_tick_params(labelsize=12)
         ax1.yaxis.set_tick_params(labelsize=12)
-        # ax1.set_ylim([0.8,10])
         ax1.set_xlabel(xlabel,fontsize=14)
         ax1.set_ylabel(ylabel,fontsize=14)
-        # ax1.set_ylim((minimum,1))
         ax1.set_title(title)
-        # pl.savefig(f'/STER/karansinghd/PhD/ResponseCorrection/testing/Plots/{title}.pdf',format='pdf')
-        # pl.show()
         pl.savefig(f'{LocalPath}/{self.object}/{title}.pdf',format='pdf')
         pl.close()
 
