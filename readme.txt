@@ -13,14 +13,14 @@ I. Overview of files
 'compare_reductions.py'
 - script to compare the processed P28 data from April 2021 vs Jan 2022. Creates 'modified.csv'
 
+'modified.csv'
+- List of P28 stars which whose 'stdinfo.csv' entries were modified with the new reduction in Jan 2022. Created with 'compare_reductions.py'
+
 'correct_spectrum.py'
 - script to correct spectra for the instrumental response. Relies on the response already being derived in '/STER/karansinghd/PhD/ResponseCorrection/responses_c_2022/'. If no response exists for the required night, the script calls 'get_response.py'.
 
 'diagnostic_plots.py'
 - Script to create diagnostic plots starting from '_c.fits' until the final '_cr.fits'.
-
-'diagnostic_plots_p2.py'
-- Same as above but for the P2 stars particularly. This has not been updated for the new P2 list, the same as 'correct_spectrum_p2.py'.
 
 'fix_fits.py'
 - Script to fix the headers for a subset of '/STER/karansinghd/P28_cr_2022/stdinfo.csv'. Something went wrong when Molecfit saved header["UTC"], and so this had to be redone.
@@ -37,9 +37,6 @@ I. Overview of files
 'Make_plots_molecfit.py'
 'Make_plots.py'
 - Scripts to create plots used in the paper.
-
-'modified.csv'
-- List of P28 stars which whose 'stdinfo.csv' entries were modified with the new reduction in Jan 2022. Created with 'compare_reductions.py'
 
 'py27.yaml'
 - The yaml file for my python 2.7 environment with packages that will allow the user to run the standalone version of Molecfit (see below)
